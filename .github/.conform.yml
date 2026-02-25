@@ -1,0 +1,17 @@
+policies:
+  - type: commit
+    spec:
+      header:
+        length: 89
+        imperative: true
+        case: lower
+        invalidLastCharacter: .
+      body:
+        required: true
+      conventional:
+        types:
+          - fix
+          - feat
+          - test
+          - docs
+          - chore

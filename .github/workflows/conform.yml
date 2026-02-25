@@ -1,0 +1,20 @@
+name: conform
+
+on:
+  pull_request:
+    branches:
+      - main
+  merge_group:
+
+
+jobs:
+  conform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: docker://ghcr.io/siderolabs/conform@v0.1.0-alpha.31
+        with:
+          args: enforce --config .github/.conform.yml --base-branch ${{ github.event.pull_request.base.ref }}
