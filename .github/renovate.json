@@ -1,0 +1,48 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits"
+  ],
+  "timezone": "Europe/Warsaw",
+  "automerge": true,
+  "automergeType": "pr",
+  "platformAutomerge": true,
+  "rebaseWhen": "behind-base-branch",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true
+  },
+  "packageRules": [
+    {
+      "description": "Major updates — require manual review",
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "semanticCommitType": "feat"
+    },
+    {
+      "description": "Non-major dependency updates — group and automerge",
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "automerge": true,
+      "semanticCommitType": "chore",
+      "groupName": "Non-major updates",
+      "groupSlug": "non-major-updates"
+    },
+    {
+      "description": "GitHub Actions — automerge as a group",
+      "matchManagers": ["github-actions"],
+      "automerge": true,
+      "semanticCommitType": "chore",
+      "groupName": "GitHub Actions updates",
+      "groupSlug": "github-actions-updates"
+    },
+    {
+      "description": "Security updates — last rule wins; disable automerge and label for manual review regardless of update type",
+      "matchCategories": ["security"],
+      "automerge": false,
+      "labels": ["security"],
+      "semanticCommitType": "fix"
+    }
+  ]
+}

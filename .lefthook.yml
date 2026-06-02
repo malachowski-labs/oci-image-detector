@@ -1,0 +1,11 @@
+# Install lefthook: `brew install lefthook` or `go install github.com/evilmartians/lefthook@latest`
+# Then activate hooks: `lefthook install`
+#
+# Requires conform binary: `go install github.com/siderolabs/conform/cmd/conform@v0.1.0-alpha.31`
+# The same conform config used in CI lives at .github/.conform.yml
+
+commit-msg:
+  parallel: false
+  commands:
+    conventional:
+      run: conform enforce --commit-msg-file {1}

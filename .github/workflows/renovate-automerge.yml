@@ -1,0 +1,37 @@
+name: renovate-automerge
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+# Least-privilege: only the permissions this workflow actually uses.
+permissions:
+  pull-requests: write
+
+jobs:
+  automerge:
+    name: Auto-approve Renovate PRs
+    runs-on: ubuntu-latest
+    # Serialise per-PR to avoid redundant concurrent runs on rapid re-syncs.
+    concurrency:
+      group: renovate-automerge-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    # Only act on Renovate PRs that carry no 'security' label.
+    # Security updates are labelled by the last packageRule in renovate.json
+    # and must be reviewed manually before merging.
+    #
+    # Note: GITHUB_TOKEN (github-actions[bot]) CAN approve Renovate PRs.
+    # If branch protection requires human approvals this step has no effect
+    # and the PR will remain in a pending-approval state until a human reviews.
+    if: |
+      github.actor == 'renovate[bot]' &&
+      !contains(github.event.pull_request.labels.*.name, 'security')
+    steps:
+      - name: Auto-approve
+        run: gh pr review --approve "${{ github.event.pull_request.number }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}

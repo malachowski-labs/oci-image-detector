@@ -11,10 +11,13 @@ jobs:
   conform:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+          # Check out the real PR branch HEAD, not the synthetic merge commit
+          # that actions/checkout produces by default on pull_request events.
+          ref: ${{ github.event.pull_request.head.sha }}
 
-      - uses: docker://ghcr.io/siderolabs/conform@v0.1.0-alpha.31
+      - uses: docker://ghcr.io/siderolabs/conform:v0.1.0-alpha.31
         with:
-          args: enforce --config .github/.conform.yml --base-branch ${{ github.event.pull_request.base.ref }}
+          args: enforce --base-branch origin/${{ github.event.pull_request.base.ref }}
