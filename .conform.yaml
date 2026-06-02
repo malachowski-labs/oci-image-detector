@@ -10,8 +10,14 @@ policies:
         required: true
       conventional:
         types:
-          - fix
           - feat
-          - test
+          - fix
           - docs
+          - style
+          - refactor
+          - perf
+          - test
+          - build
+          - ci
           - chore
+          - revert
