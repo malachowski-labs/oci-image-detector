@@ -54,7 +54,10 @@ type DirectoryAwareDetector interface {
 
 	// MatchDir reports whether this detector should process the given directory.
 	// dirPath is slash-separated and relative to the scan root.
-	MatchDir(dirPath string) bool
+	// entries are the direct children of the directory — implementations use
+	// them to inspect filenames (e.g. "does this dir contain .tf files?")
+	// without requiring an additional FS read.
+	MatchDir(dirPath string, entries []fs.DirEntry) bool
 
 	// DetectDir scans an entire directory in one pass.
 	// dir is an fs.FS rooted at the directory being scanned.

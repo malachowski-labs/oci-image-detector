@@ -46,7 +46,7 @@ type stubDirDetector struct {
 }
 
 func (d *stubDirDetector) Name() string { return d.name }
-func (d *stubDirDetector) MatchDir(dirPath string) bool {
+func (d *stubDirDetector) MatchDir(dirPath string, _ []fs.DirEntry) bool {
 	return len(dirPath) >= len(d.dirSuffix) &&
 		dirPath[len(dirPath)-len(d.dirSuffix):] == d.dirSuffix
 }

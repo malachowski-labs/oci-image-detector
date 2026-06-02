@@ -103,8 +103,14 @@ func (s *ScanService) ScanFS(ctx context.Context, fsys fs.FS, opts port.ScanOpti
 // On fs.Sub failure the directory is skipped entirely (fail-closed) so file
 // detectors do not silently take over for a directory the dir-detector claimed.
 func (s *ScanService) handleDir(fsys fs.FS, dirPath string, findings *[]domain.Finding) error {
+	entries, err := fs.ReadDir(fsys, dirPath)
+	if err != nil {
+		s.log.Warn("cannot read directory entries", zap.String("path", dirPath), zap.Error(err))
+		return nil
+	}
+
 	for _, det := range s.dirDetectors {
-		if !det.MatchDir(dirPath) {
+		if !det.MatchDir(dirPath, entries) {
 			continue
 		}
 
