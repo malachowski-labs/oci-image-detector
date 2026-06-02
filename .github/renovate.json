@@ -10,6 +10,9 @@
   "automergeType": "pr",
   "platformAutomerge": true,
   "rebaseWhen": "behind-base-branch",
+  "ignoreDeps": [
+    "github.com/bmatcuk/doublestar/v4"
+  ],
   "lockFileMaintenance": {
     "enabled": true,
     "automerge": true
