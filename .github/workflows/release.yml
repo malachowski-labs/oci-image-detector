@@ -57,9 +57,65 @@ jobs:
           git tag "$NEXT_TAG"
           git push origin "$NEXT_TAG"
 
+      - name: Build release binaries
+        if: steps.version.outputs.current != steps.version.outputs.next
+        env:
+          NEXT_TAG: ${{ steps.version.outputs.next }}
+        run: |
+          mkdir -p dist
+          BIN="oci-image-detector"
+
+          # Ordered list of "OS ARCH SUFFIX" triples — deterministic log output,
+          # no bash 4 associative-array requirement.
+          TARGETS=(
+            "linux   amd64 linux_amd64"
+            "linux   arm64 linux_arm64"
+            "darwin  amd64 darwin_amd64"
+            "darwin  arm64 darwin_arm64"
+            "windows amd64 windows_amd64"
+          )
+
+          for ENTRY in "${TARGETS[@]}"; do
+            read -r OS ARCH SUFFIX <<< "$ENTRY"
+            ARCHIVE="dist/oci-image-detector_${SUFFIX}"
+
+            if [ "$OS" = "windows" ]; then
+              GOOS="$OS" GOARCH="$ARCH" CGO_ENABLED=0 \
+                go build -trimpath \
+                  -ldflags="-s -w -X 'main.version=${NEXT_TAG}'" \
+                  -o "dist/${BIN}.exe" ./
+              zip "${ARCHIVE}.zip" -j "dist/${BIN}.exe"
+              rm "dist/${BIN}.exe"
+            else
+              GOOS="$OS" GOARCH="$ARCH" CGO_ENABLED=0 \
+                go build -trimpath \
+                  -ldflags="-s -w -X 'main.version=${NEXT_TAG}'" \
+                  -o "dist/${BIN}" ./
+              tar -czf "${ARCHIVE}.tar.gz" -C dist "${BIN}"
+              rm "dist/${BIN}"
+            fi
+          done
+
+          # Generate a single checksum file for all release archives so
+          # consumers can verify integrity without trusting HTTPS alone.
+          cd dist && sha256sum \
+            oci-image-detector_linux_amd64.tar.gz \
+            oci-image-detector_linux_arm64.tar.gz \
+            oci-image-detector_darwin_amd64.tar.gz \
+            oci-image-detector_darwin_arm64.tar.gz \
+            oci-image-detector_windows_amd64.zip \
+            > sha256sums.txt
+
       - name: Create GitHub release
         if: steps.version.outputs.current != steps.version.outputs.next
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
         with:
           tag_name: ${{ steps.version.outputs.next }}
           generate_release_notes: true
+          files: |
+            dist/oci-image-detector_linux_amd64.tar.gz
+            dist/oci-image-detector_linux_arm64.tar.gz
+            dist/oci-image-detector_darwin_amd64.tar.gz
+            dist/oci-image-detector_darwin_arm64.tar.gz
+            dist/oci-image-detector_windows_amd64.zip
+            dist/sha256sums.txt
