@@ -28,13 +28,23 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+          # Explicitly check out the tested commit, not whatever HEAD points to
+          # when the release job runs — prevents tagging a different commit when
+          # new pushes land on main between the test run and this job.
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version-file: 'go.mod'
           cache: true
 
-      - uses: caarlos0/setup-svu@v3
+      - name: Install svu
+        # Download the pre-built binary directly from the release — no Go
+        # toolchain compilation, deterministic version, no missing action.
+        run: |
+          curl -sSfL https://github.com/caarlos0/svu/releases/download/v3.4.1/svu_3.4.1_linux_amd64.tar.gz \
+            | tar -xz svu
+          sudo mv svu /usr/local/bin/svu
 
       - name: Configure git identity
         run: |

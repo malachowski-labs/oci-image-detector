@@ -10,7 +10,6 @@ on:
 # Least-privilege: only the permissions this workflow actually uses.
 permissions:
   pull-requests: write
-  contents: write
 
 jobs:
   automerge:
