@@ -8,4 +8,4 @@ commit-msg:
   parallel: false
   commands:
     conventional:
-      run: conform enforce --config .github/.conform.yml --commit-msg-file {1}
+      run: conform enforce --commit-msg-file {1}
