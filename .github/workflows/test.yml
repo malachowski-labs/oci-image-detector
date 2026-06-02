@@ -17,10 +17,6 @@ jobs:
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
-    # Skip when no Go source exists yet (e.g. CI-only PRs at project bootstrap).
-    # hashFiles returns an empty string when no files match — GitHub treats a
-    # skipped required-status-check job as passing.
-    if: hashFiles('**/*.go') != ''
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
