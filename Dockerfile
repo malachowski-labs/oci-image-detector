@@ -33,6 +33,11 @@ RUN CGO_ENABLED=0 go build \
 # The binary is statically linked so it needs no libc or runtime dependencies.
 FROM scratch
 
+# HEALTHCHECK NONE — this is a short-lived CLI tool, not a long-running
+# service. The scratch base has no shell or utilities to run a health
+# check command with, and none is meaningful for a batch scanner.
+HEALTHCHECK NONE
+
 # Copy TLS root certificates from the builder so the binary can validate HTTPS
 # connections for future registry-query features.
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
