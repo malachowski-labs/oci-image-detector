@@ -13,13 +13,14 @@ branding:
 inputs:
   version:
     description: >
-      Release tag to download (e.g. "v0.3.0"). Defaults to "latest", which
-      resolves the most recent published release at run time.
+      Docker image tag to run (e.g. "v0.5.0"). Defaults to "latest".
     required: false
     default: latest
 
   directory:
-    description: Root directory to scan (default ".").
+    description: >
+      Directory to scan, relative to the repository root (default ".").
+      Must be a relative path.
     required: false
     default: .
 
@@ -33,9 +34,9 @@ inputs:
 
   output-file:
     description: >
-      Path where the JSON findings report is written. When left empty the
-      JSON report is written to a temporary file so the findings-count output
-      is always available; the path is exposed via the output-file output.
+      Path for the JSON findings report, relative to the repository root.
+      When left empty a temporary file is used; its absolute path is
+      available via the output-file output.
     required: false
     default: ''
 
@@ -55,106 +56,19 @@ outputs:
     value: ${{ steps.count.outputs.findings-count }}
 
   output-file:
-    description: Absolute path to the JSON findings report.
+    description: Absolute path to the JSON findings report on the runner.
     value: ${{ steps.resolve-output.outputs.output-file }}
 
 runs:
   using: composite
   steps:
     # ------------------------------------------------------------------ #
-    # 1. Resolve the requested version tag                                 #
-    # ------------------------------------------------------------------ #
-    - name: Resolve version
-      id: resolve-version
-      shell: bash
-      env:
-        INPUT_VERSION: ${{ inputs.version }}
-        GH_TOKEN: ${{ github.token }}
-      run: |
-        if [ "$INPUT_VERSION" = "latest" ]; then
-          TAG=$(gh release view \
-            --repo malachowski-labs/oci-image-detector \
-            --json tagName \
-            --jq .tagName)
-        else
-          TAG="$INPUT_VERSION"
-        fi
-        # Use the EOF-delimiter syntax to prevent newline injection into
-        # GITHUB_OUTPUT — a version string should never contain newlines,
-        # but defense in depth costs nothing here.
-        {
-          echo "tag<<EOF"
-          printf '%s\n' "$TAG"
-          echo "EOF"
-        } >> "$GITHUB_OUTPUT"
-
-    # ------------------------------------------------------------------ #
-    # 2. Detect OS / architecture and pick the right archive              #
-    # ------------------------------------------------------------------ #
-    - name: Detect platform
-      id: platform
-      shell: bash
-      run: |
-        OS="$(uname -s)"
-        ARCH="$(uname -m)"
-
-        case "$OS" in
-          Linux)   OS_KEY="linux"   ;;
-          Darwin)  OS_KEY="darwin"  ;;
-          MINGW*|MSYS*|CYGWIN*) OS_KEY="windows" ;;
-          *) echo "::error::Unsupported OS: $OS"; exit 1 ;;
-        esac
-
-        case "$ARCH" in
-          x86_64)          ARCH_KEY="amd64" ;;
-          aarch64|arm64)   ARCH_KEY="arm64" ;;
-          *) echo "::error::Unsupported architecture: $ARCH"; exit 1 ;;
-        esac
-
-        SUFFIX="${OS_KEY}_${ARCH_KEY}"
-        if [ "$OS_KEY" = "windows" ]; then
-          echo "archive=oci-image-detector_${SUFFIX}.zip" >> "$GITHUB_OUTPUT"
-          echo "ext=.exe"                                 >> "$GITHUB_OUTPUT"
-        else
-          echo "archive=oci-image-detector_${SUFFIX}.tar.gz" >> "$GITHUB_OUTPUT"
-          echo "ext="                                         >> "$GITHUB_OUTPUT"
-        fi
-        echo "os=$OS_KEY" >> "$GITHUB_OUTPUT"
-
-    # ------------------------------------------------------------------ #
-    # 3. Download + extract the binary                                    #
-    # ------------------------------------------------------------------ #
-    - name: Download binary
-      shell: bash
-      env:
-        TAG:      ${{ steps.resolve-version.outputs.tag }}
-        ARCHIVE:  ${{ steps.platform.outputs.archive }}
-        OS_KEY:   ${{ steps.platform.outputs.os }}
-        EXT:      ${{ steps.platform.outputs.ext }}
-        GH_TOKEN: ${{ github.token }}
-      run: |
-        # Use mktemp so that multiple uses of this action in one job each get
-        # their own directory — avoids the second invocation silently reusing
-        # the binary from the first with a potentially different version.
-        DEST="$(mktemp -d "$RUNNER_TEMP/oci-image-detector-XXXXXX")"
-
-        gh release download "$TAG" \
-          --repo malachowski-labs/oci-image-detector \
-          --pattern "$ARCHIVE" \
-          --dir "$DEST"
-
-        if [ "$OS_KEY" = "windows" ]; then
-          unzip -q "$DEST/$ARCHIVE" -d "$DEST"
-        else
-          tar -xzf "$DEST/$ARCHIVE" -C "$DEST"
-        fi
-
-        BIN="$DEST/oci-image-detector${EXT}"
-        chmod +x "$BIN"
-        echo "$DEST" >> "$GITHUB_PATH"
-
-    # ------------------------------------------------------------------ #
-    # 4. Resolve (or create) the output file path                         #
+    # 1. Resolve the final output file path.                              #
+    #                                                                     #
+    # The container always writes to a dedicated directory inside         #
+    # RUNNER_TEMP (the only writable mount it receives). When the caller  #
+    # specified a relative output-file path we copy the result there      #
+    # after the scan.                                                     #
     # ------------------------------------------------------------------ #
     - name: Resolve output file
       id: resolve-output
@@ -163,9 +77,10 @@ runs:
         INPUT_OUTPUT_FILE: ${{ inputs.output-file }}
       run: |
         if [ -n "$INPUT_OUTPUT_FILE" ]; then
-          OUT="$INPUT_OUTPUT_FILE"
+          # Resolve relative to workspace root; expose the final host path.
+          OUT="$GITHUB_WORKSPACE/$INPUT_OUTPUT_FILE"
         else
-          OUT="$RUNNER_TEMP/oci-image-detector-findings.json"
+          OUT="$RUNNER_TEMP/oci-image-detector/findings.json"
         fi
         # EOF-delimiter prevents path injection into GITHUB_OUTPUT.
         {
@@ -175,18 +90,53 @@ runs:
         } >> "$GITHUB_OUTPUT"
 
     # ------------------------------------------------------------------ #
-    # 5. Build flag array and run the scan                                 #
+    # 2. Run the scanner via Docker.                                      #
+    #                                                                     #
+    # Volume mounts:                                                      #
+    #   /github/workspace  — workspace, read-only                        #
+    #   $OUTDIR            — dedicated temp dir for the JSON report       #
+    #                                                                     #
+    # The container always writes the report into $OUTDIR (inside        #
+    # RUNNER_TEMP). If the caller requested a custom output path the      #
+    # report is copied there afterwards.                                  #
+    #                                                                     #
+    # No registry credentials are needed — ghcr.io packages are public.  #
+    # --network none: the scanner reads local files only; no egress       #
+    # is needed, and disabling the network shrinks the attack surface.    #
     # ------------------------------------------------------------------ #
     - name: Run scan
       shell: bash
       env:
+        INPUT_VERSION:     ${{ inputs.version }}
         INPUT_DIRECTORY:   ${{ inputs.directory }}
         INPUT_EXCLUDE:     ${{ inputs.exclude }}
         INPUT_ALLOW_EMPTY: ${{ inputs.allow-empty }}
         INPUT_VERBOSE:     ${{ inputs.verbose }}
-        OUTPUT_FILE:       ${{ steps.resolve-output.outputs.output-file }}
+        INPUT_OUTPUT_FILE: ${{ inputs.output-file }}
+        FINAL_OUTPUT_FILE: ${{ steps.resolve-output.outputs.output-file }}
       run: |
-        ARGS=(--directory "$INPUT_DIRECTORY" --output-file "$OUTPUT_FILE")
+        # Guard against absolute paths — the directory is mounted at
+        # /github/workspace inside the container; an absolute path would
+        # silently scan the wrong location.
+        if [[ "$INPUT_DIRECTORY" = /* ]]; then
+          echo "::error::'directory' must be a relative path (got: '$INPUT_DIRECTORY')"
+          exit 1
+        fi
+
+        IMAGE="ghcr.io/malachowski-labs/oci-image-detector:${INPUT_VERSION}"
+
+        # The container writes the report to a dedicated temp directory.
+        # This directory is the only writable bind mount the container receives.
+        OUTDIR="$RUNNER_TEMP/oci-image-detector"
+        INTERNAL_REPORT="$OUTDIR/findings.json"
+        mkdir -p "$OUTDIR"
+        # Ensure the non-root container user (UID 65532) can write here.
+        chmod 777 "$OUTDIR"
+
+        ARGS=(
+          --directory "/github/workspace/${INPUT_DIRECTORY}"
+          --output-file "$INTERNAL_REPORT"
+        )
 
         # Each non-empty line in the exclude input becomes its own --exclude flag.
         while IFS= read -r pattern; do
@@ -197,10 +147,21 @@ runs:
         [[ "$INPUT_ALLOW_EMPTY" == "true" ]] && ARGS+=(--allow-empty)
         [[ "$INPUT_VERBOSE"     == "true" ]] && ARGS+=(--verbose)
 
-        oci-image-detector "${ARGS[@]}"
+        docker run --rm \
+          --network none \
+          --volume "$GITHUB_WORKSPACE:/github/workspace:ro" \
+          --volume "$OUTDIR:$OUTDIR" \
+          "$IMAGE" \
+          "${ARGS[@]}"
+
+        # If the caller requested a custom output path, copy the report there.
+        if [ -n "$INPUT_OUTPUT_FILE" ]; then
+          mkdir -p "$(dirname "$FINAL_OUTPUT_FILE")"
+          cp "$INTERNAL_REPORT" "$FINAL_OUTPUT_FILE"
+        fi
 
     # ------------------------------------------------------------------ #
-    # 6. Count findings from the JSON report                              #
+    # 3. Count findings from the JSON report.                             #
     # ------------------------------------------------------------------ #
     - name: Count findings
       id: count
@@ -208,9 +169,6 @@ runs:
       env:
         OUTPUT_FILE: ${{ steps.resolve-output.outputs.output-file }}
       run: |
-        # Guard against a missing report file (e.g. disk-full / permission error
-        # in the reporter) so the error message is actionable rather than a
-        # cryptic "No such file" from jq.
         if [[ ! -f "$OUTPUT_FILE" ]]; then
           echo "::error::JSON report not found at '$OUTPUT_FILE'. Check for reporter errors above."
           exit 1

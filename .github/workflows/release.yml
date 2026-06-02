@@ -11,13 +11,13 @@ concurrency:
   group: release
   cancel-in-progress: false
 
-permissions:
-  contents: write
-
 jobs:
   release:
     name: Tag and Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # create tags + GitHub releases
+      packages: write  # push to ghcr.io
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -119,3 +119,51 @@ jobs:
             dist/oci-image-detector_darwin_arm64.tar.gz
             dist/oci-image-detector_windows_amd64.zip
             dist/sha256sums.txt
+
+      # ── Docker image ──────────────────────────────────────────────────── #
+      # Built and pushed only when a new version tag was created above.
+      # Produces a multi-arch manifest (linux/amd64 + linux/arm64) and tags
+      # both the exact version and `latest` on ghcr.io.
+
+      - name: Set up Docker Buildx
+        if: steps.version.outputs.current != steps.version.outputs.next
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Log in to GHCR
+        if: steps.version.outputs.current != steps.version.outputs.next
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          # Use repository_owner (org/user) rather than actor so that bots
+          # (Renovate, Dependabot) triggering a push don't need packages:write
+          # on their own tokens.
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        if: steps.version.outputs.current != steps.version.outputs.next
+        id: meta
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.next }}
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        if: steps.version.outputs.current != steps.version.outputs.next
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ steps.version.outputs.next }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Attach a SLSA Level 1 provenance attestation to the image manifest
+          # for supply-chain transparency. Consumers can verify with:
+          #   gh attestation verify oci://ghcr.io/... --repo malachowski-labs/oci-image-detector
+          provenance: mode=min
+          sbom: false
