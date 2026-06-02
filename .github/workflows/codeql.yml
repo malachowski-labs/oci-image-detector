@@ -16,6 +16,9 @@ jobs:
   analyze:
     name: Analyze
     runs-on: ubuntu-latest
+    # Skip when no Go source exists yet (e.g. CI-only PRs at project bootstrap).
+    # Always runs on scheduled scans regardless of file presence.
+    if: hashFiles('**/*.go') != '' || github.event_name == 'schedule'
     permissions:
       security-events: write
       actions: read
