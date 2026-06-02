@@ -1,7 +1,6 @@
 name: OCI Image Detector
 description: >
-  Scan a directory tree for OCI/Docker image references in Dockerfiles,
-  Helm values files, Terraform configs, and generic text files.
+  Scan a directory tree for OCI/Docker image references.
   Returns a JSON findings file and a findings count output.
 
 author: malachowski-labs
