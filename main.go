@@ -1,5 +1,8 @@
 // Package main is the entry point for the oci-image-detector CLI.
-// This file is a stub — implementation is in progress.
 package main
 
-func main() {}
+import "github.com/malachowski-labs/oci-image-detector/cmd"
+
+func main() {
+	cmd.Execute()
+}
