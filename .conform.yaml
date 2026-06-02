@@ -7,7 +7,7 @@ policies:
         case: lower
         invalidLastCharacter: .
       body:
-        required: true
+        required: false
       conventional:
         types:
           - feat
