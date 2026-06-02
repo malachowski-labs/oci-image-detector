@@ -48,9 +48,10 @@ type options struct {
 }
 
 // Execute builds the root cobra command, executes it, and exits on error.
+// version is injected by main from the -ldflags build variable.
 // It is the sole entry point called from main.
-func Execute() {
-	if err := newRootCmd().Execute(); err != nil {
+func Execute(version string) {
+	if err := newRootCmd(version).Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
@@ -59,12 +60,13 @@ func Execute() {
 // newRootCmd constructs the cobra.Command with all flags bound to an options
 // struct. Separating construction from execution makes the command testable
 // without spawning a subprocess.
-func newRootCmd() *cobra.Command {
+func newRootCmd(version string) *cobra.Command {
 	var opts options
 
 	cmd := &cobra.Command{
-		Use:   "oci-image-detector",
-		Short: "Scan a directory tree for OCI/Docker image references",
+		Use:     "oci-image-detector",
+		Version: version,
+		Short:   "Scan a directory tree for OCI/Docker image references",
 		Long: `oci-image-detector recursively scans a directory for OCI image references
 in Dockerfiles, Helm values files, Terraform configs, and arbitrary text files.
 
