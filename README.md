@@ -13,6 +13,12 @@ A production-ready CLI tool and GitHub Action that **recursively scans a directo
 
 ## Installation
 
+### Docker (recommended)
+
+```bash
+docker pull ghcr.io/malachowski-labs/oci-image-detector:latest
+```
+
 ### Pre-built binary
 
 Download the archive for your platform from the [Releases](https://github.com/malachowski-labs/oci-image-detector/releases) page and put the binary on your `$PATH`.
@@ -24,6 +30,8 @@ oci-image-detector_darwin_amd64.tar.gz
 oci-image-detector_darwin_arm64.tar.gz
 oci-image-detector_windows_amd64.zip
 ```
+
+Each release also includes `sha256sums.txt` for integrity verification.
 
 ### From source
 
@@ -52,7 +60,7 @@ oci-image-detector [flags]
 | `--verbose` | `-v` | `false` | Enable debug logging on stderr |
 | `--version` | | | Print version and exit |
 
-### Examples
+### Binary examples
 
 ```bash
 # Scan the current directory and print findings to stdout
@@ -63,6 +71,32 @@ oci-image-detector -d ./infra -e 'test/**' -o findings.json
 
 # Scan and exit 0 even when nothing is found (useful in pre-commit hooks)
 oci-image-detector --allow-empty
+```
+
+### Docker examples
+
+```bash
+# Scan the current directory
+docker run --rm \
+  -v "$(pwd):/workspace:ro" \
+  ghcr.io/malachowski-labs/oci-image-detector:latest \
+  --directory /workspace
+
+# Write a JSON report to the host
+docker run --rm \
+  -v "$(pwd):/workspace:ro" \
+  -v "$(pwd)/out:/out" \
+  ghcr.io/malachowski-labs/oci-image-detector:latest \
+  --directory /workspace \
+  --output-file /out/findings.json
+
+# Exclude vendor, exit 0 when nothing found
+docker run --rm \
+  -v "$(pwd):/workspace:ro" \
+  ghcr.io/malachowski-labs/oci-image-detector:latest \
+  --directory /workspace \
+  --exclude 'vendor/**' \
+  --allow-empty
 ```
 
 ### Output
@@ -111,8 +145,10 @@ JSON report (when `--output-file` is set):
 
 ## GitHub Action
 
+The action runs the same Docker image used locally — no extra permissions required.
+
 ```yaml
-- uses: malachowski-labs/oci-image-detector@v0.3.0
+- uses: malachowski-labs/oci-image-detector@v0.5.0
   id: scan
   with:
     directory: ./infra
@@ -120,8 +156,6 @@ JSON report (when `--output-file` is set):
       vendor/**
       test/**
     output-file: findings.json
-    allow-empty: 'false'
-    verbose: 'false'
 
 - name: Print findings count
   run: echo "Found ${{ steps.scan.outputs.findings-count }} image references"
@@ -131,10 +165,10 @@ JSON report (when `--output-file` is set):
 
 | Input | Default | Description |
 |---|---|---|
-| `version` | `latest` | Release tag to download, e.g. `v0.3.0` |
-| `directory` | `.` | Root directory to scan |
+| `version` | `latest` | Docker image tag to run, e.g. `v0.5.0` |
+| `directory` | `.` | Root directory to scan (relative to repo root) |
 | `exclude` | `''` | Newline-separated doublestar glob patterns to exclude |
-| `output-file` | `''` | Path for the JSON report. If empty, a temp file is used and its path is available via `outputs.output-file` |
+| `output-file` | `''` | Path for the JSON report (relative to repo root). If empty, a temp file is used and its path is available via `outputs.output-file` |
 | `allow-empty` | `false` | Exit 0 when no image references are found |
 | `verbose` | `false` | Enable debug logging |
 
@@ -145,18 +179,10 @@ JSON report (when `--output-file` is set):
 | `findings-count` | Number of image references found |
 | `output-file` | Absolute path to the JSON findings report |
 
-### Required permissions
-
-The action uses `${{ github.token }}` to resolve the release version and download the binary archive. The calling workflow needs **`contents: read`** on the token (this is the GitHub default, but organisations with restrictive default permissions must grant it explicitly):
-
-```yaml
-permissions:
-  contents: read
-```
-
 ### Prerequisites
 
-The `findings-count` output is derived by running `jq` on the JSON report. `jq` is pre-installed on all GitHub-hosted runners (`ubuntu-*`, `macos-*`, `windows-*`). Self-hosted runners must provide `jq` independently.
+- Docker must be available on the runner. All GitHub-hosted `ubuntu-*` runners include Docker; `macos-*` and `windows-*` runners do not have Docker by default.
+- `jq` is used to count findings and is pre-installed on all GitHub-hosted runners. Self-hosted runners must provide it independently.
 
 ### Full workflow example
 
@@ -166,23 +192,19 @@ name: Image Audit
 on:
   pull_request:
 
-permissions:
-  contents: read  # required by oci-image-detector to download the binary
-
 jobs:
   audit:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest   # Docker required — use ubuntu-* runners
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: malachowski-labs/oci-image-detector@v0.3.0
+      - uses: malachowski-labs/oci-image-detector@v0.5.0
         id: scan
         with:
           directory: .
           exclude: |
-            .git/**
             vendor/**
-          output-file: ${{ runner.temp }}/findings.json
+          output-file: findings.json
 
       - name: Upload findings
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -199,7 +221,11 @@ jobs:
 
 ## Supported platforms
 
-The GitHub Action works on `ubuntu-*`, `macos-*`, and `windows-*` GitHub-hosted runners.
+| Usage | Platforms |
+|---|---|
+| Docker image | `linux/amd64`, `linux/arm64` |
+| Pre-built binary | Linux, macOS, Windows (amd64 + arm64 where applicable) |
+| GitHub Action | `ubuntu-*` GitHub-hosted runners (Docker required) |
 
 ---
 
