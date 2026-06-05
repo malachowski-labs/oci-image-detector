@@ -20,4 +20,8 @@ jobs:
 
       - uses: docker://ghcr.io/siderolabs/conform:v0.1.0-alpha.31
         with:
-          args: enforce --base-branch origin/${{ github.event.pull_request.base.ref }}
+          # github.event.pull_request.base.ref is empty on merge_group events,
+          # which would produce "origin/" (trailing slash) and crash conform with
+          # "Revision invalid : must not end with /".  Fall back to 'main' so
+          # the merge queue gets a valid revision.
+          args: enforce --base-branch origin/${{ github.event.pull_request.base.ref || 'main' }}
