@@ -1,7 +1,5 @@
 name: OCI Image Detector
-description: >
-  Scan a directory tree for OCI/Docker image references.
-  Returns a JSON findings file and a findings count output.
+description: Scan a directory tree for OCI/Docker image references.
 
 author: malachowski-labs
 
@@ -11,31 +9,17 @@ branding:
 
 inputs:
   version:
-    description: >
-      Docker image tag to run (e.g. "v0.5.0"). Defaults to "latest".
+    description: Docker image tag to run (e.g. "v0.5.0"). Defaults to "latest".
     required: false
     default: latest
 
   directory:
-    description: >
-      Directory to scan, relative to the repository root (default ".").
-      Must be a relative path.
+    description: Directory to scan, relative to the repository root. Must be a relative path.
     required: false
     default: .
 
   exclude:
-    description: >
-      Newline-separated list of doublestar glob patterns to exclude
-      (e.g. "vendor/**\ntest/**"). Each non-empty line becomes a separate
-      --exclude flag.
-    required: false
-    default: ''
-
-  output-file:
-    description: >
-      Path for the JSON findings report, relative to the repository root.
-      When left empty a temporary file is used; its absolute path is
-      available via the output-file output.
+    description: Newline-separated doublestar glob patterns to exclude (e.g. "vendor/**\ntest/**").
     required: false
     default: ''
 
@@ -52,58 +36,17 @@ inputs:
 outputs:
   findings-count:
     description: Number of image references found.
-    value: ${{ steps.count.outputs.findings-count }}
+    value: ${{ steps.scan.outputs.findings-count }}
 
   output-file:
-    description: Absolute path to the JSON findings report on the runner.
-    value: ${{ steps.resolve-output.outputs.output-file }}
+    description: Absolute path to the JSON findings report in the runner's temp directory.
+    value: ${{ steps.scan.outputs.output-file }}
 
 runs:
   using: composite
   steps:
-    # ------------------------------------------------------------------ #
-    # 1. Resolve the final output file path.                              #
-    #                                                                     #
-    # The container always writes to a dedicated directory inside         #
-    # RUNNER_TEMP (the only writable mount it receives). When the caller  #
-    # specified a relative output-file path we copy the result there      #
-    # after the scan.                                                     #
-    # ------------------------------------------------------------------ #
-    - name: Resolve output file
-      id: resolve-output
-      shell: bash
-      env:
-        INPUT_OUTPUT_FILE: ${{ inputs.output-file }}
-      run: |
-        if [ -n "$INPUT_OUTPUT_FILE" ]; then
-          # Resolve relative to workspace root; expose the final host path.
-          OUT="$GITHUB_WORKSPACE/$INPUT_OUTPUT_FILE"
-        else
-          OUT="$RUNNER_TEMP/oci-image-detector/findings.json"
-        fi
-        # EOF-delimiter prevents path injection into GITHUB_OUTPUT.
-        {
-          echo "output-file<<EOF"
-          printf '%s\n' "$OUT"
-          echo "EOF"
-        } >> "$GITHUB_OUTPUT"
-
-    # ------------------------------------------------------------------ #
-    # 2. Run the scanner via Docker.                                      #
-    #                                                                     #
-    # Volume mounts:                                                      #
-    #   /github/workspace  — workspace, read-only                        #
-    #   $OUTDIR            — dedicated temp dir for the JSON report       #
-    #                                                                     #
-    # The container always writes the report into $OUTDIR (inside        #
-    # RUNNER_TEMP). If the caller requested a custom output path the      #
-    # report is copied there afterwards.                                  #
-    #                                                                     #
-    # No registry credentials are needed — ghcr.io packages are public.  #
-    # --network none: the scanner reads local files only; no egress       #
-    # is needed, and disabling the network shrinks the attack surface.    #
-    # ------------------------------------------------------------------ #
-    - name: Run scan
+    - name: Scan
+      id: scan
       shell: bash
       env:
         INPUT_VERSION:     ${{ inputs.version }}
@@ -111,33 +54,24 @@ runs:
         INPUT_EXCLUDE:     ${{ inputs.exclude }}
         INPUT_ALLOW_EMPTY: ${{ inputs.allow-empty }}
         INPUT_VERBOSE:     ${{ inputs.verbose }}
-        INPUT_OUTPUT_FILE: ${{ inputs.output-file }}
-        FINAL_OUTPUT_FILE: ${{ steps.resolve-output.outputs.output-file }}
       run: |
-        # Guard against absolute paths — the directory is mounted at
-        # /github/workspace inside the container; an absolute path would
-        # silently scan the wrong location.
         if [[ "$INPUT_DIRECTORY" = /* ]]; then
           echo "::error::'directory' must be a relative path (got: '$INPUT_DIRECTORY')"
           exit 1
         fi
 
         IMAGE="ghcr.io/malachowski-labs/oci-image-detector:${INPUT_VERSION}"
-
-        # The container writes the report to a dedicated temp directory.
-        # This directory is the only writable bind mount the container receives.
         OUTDIR="$RUNNER_TEMP/oci-image-detector"
-        INTERNAL_REPORT="$OUTDIR/findings.json"
+        OUTPUT_FILE="$OUTDIR/findings.json"
         mkdir -p "$OUTDIR"
-        # Ensure the non-root container user (UID 65532) can write here.
+        # The container runs as UID 65532 (nonroot); 777 lets it write here.
         chmod 777 "$OUTDIR"
 
         ARGS=(
           --directory "/github/workspace/${INPUT_DIRECTORY}"
-          --output-file "$INTERNAL_REPORT"
+          --output-file "$OUTPUT_FILE"
         )
 
-        # Each non-empty line in the exclude input becomes its own --exclude flag.
         while IFS= read -r pattern; do
           [[ -z "$pattern" ]] && continue
           ARGS+=(--exclude "$pattern")
@@ -153,25 +87,9 @@ runs:
           "$IMAGE" \
           "${ARGS[@]}"
 
-        # If the caller requested a custom output path, copy the report there.
-        if [ -n "$INPUT_OUTPUT_FILE" ]; then
-          mkdir -p "$(dirname "$FINAL_OUTPUT_FILE")"
-          cp "$INTERNAL_REPORT" "$FINAL_OUTPUT_FILE"
-        fi
-
-    # ------------------------------------------------------------------ #
-    # 3. Count findings from the JSON report.                             #
-    # ------------------------------------------------------------------ #
-    - name: Count findings
-      id: count
-      shell: bash
-      env:
-        OUTPUT_FILE: ${{ steps.resolve-output.outputs.output-file }}
-      run: |
         if [[ ! -f "$OUTPUT_FILE" ]]; then
-          echo "::error::JSON report not found at '$OUTPUT_FILE'. Check for reporter errors above."
+          echo "::error::JSON report not found at '$OUTPUT_FILE'. Check for docker errors above."
           exit 1
         fi
-        # .findings is always an array (never null) — see reporter/json.go.
-        COUNT=$(jq '.findings | length' "$OUTPUT_FILE")
-        echo "findings-count=$COUNT" >> "$GITHUB_OUTPUT"
+        echo "findings-count=$(jq '.findings | length' "$OUTPUT_FILE")" >> "$GITHUB_OUTPUT"
+        echo "output-file=$OUTPUT_FILE" >> "$GITHUB_OUTPUT"

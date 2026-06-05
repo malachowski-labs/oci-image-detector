@@ -155,7 +155,6 @@ The action runs the same Docker image used locally — no extra permissions requ
     exclude: |
       vendor/**
       test/**
-    output-file: findings.json
 
 - name: Print findings count
   run: echo "Found ${{ steps.scan.outputs.findings-count }} image references"
@@ -168,7 +167,6 @@ The action runs the same Docker image used locally — no extra permissions requ
 | `version` | `latest` | Docker image tag to run, e.g. `v0.5.0` |
 | `directory` | `.` | Root directory to scan (relative to repo root) |
 | `exclude` | `''` | Newline-separated doublestar glob patterns to exclude |
-| `output-file` | `''` | Path for the JSON report (relative to repo root). If empty, a temp file is used and its path is available via `outputs.output-file` |
 | `allow-empty` | `false` | Exit 0 when no image references are found |
 | `verbose` | `false` | Enable debug logging |
 
@@ -204,7 +202,6 @@ jobs:
           directory: .
           exclude: |
             vendor/**
-          output-file: findings.json
 
       - name: Upload findings
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

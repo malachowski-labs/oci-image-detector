@@ -124,45 +124,7 @@ jobs:
             exit 1
           fi
 
-  # ── 2. Custom output-file ────────────────────────────────────────────────── #
-  # When the caller supplies output-file the report must land at that path,
-  # the output variable must reflect the resolved absolute path, and the file
-  # must pass a basic schema check.
-  test-custom-output-file:
-    name: Custom output-file path and schema
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Run action with custom output path
-        id: scan
-        uses: ./
-        with:
-          output-file: ci-results/findings.json
-          allow-empty: 'true'
-
-      - name: Capture output path
-        env:
-          OUTPUT_FILE: ${{ steps.scan.outputs.output-file }}
-        run: echo "OUT=$OUTPUT_FILE" >> "$GITHUB_ENV"
-
-      - name: File exists at custom path and output variable matches
-        run: |
-          EXPECTED="$GITHUB_WORKSPACE/ci-results/findings.json"
-          if [[ ! -f "$EXPECTED" ]]; then
-            echo "::error::Custom output file not found at '$EXPECTED'"
-            exit 1
-          fi
-          if [[ "$OUT" != "$EXPECTED" ]]; then
-            echo "::error::output-file mismatch: expected '$EXPECTED', got '$OUT'"
-            exit 1
-          fi
-
-      - name: Custom output file passes schema check
-        run: |
-          jq -e 'type == "object" and has("findings") and ((.findings | type) == "array")' "$OUT" > /dev/null
-
-  # ── 3. Exclude (single pattern) reduces findings ─────────────────────────── #
+  # ── 2. Exclude (single pattern) reduces findings ─────────────────────────── #
   # Running without exclude produces N findings; excluding the Dockerfile must
   # produce strictly fewer findings and leave no Dockerfile entry in the report.
   test-exclude:
@@ -213,7 +175,7 @@ jobs:
             exit 1
           fi
 
-  # ── 4. Exclude (multi-pattern) ───────────────────────────────────────────── #
+  # ── 3. Exclude (multi-pattern) ───────────────────────────────────────────── #
   # The exclude input accepts newline-separated patterns; each non-empty line
   # is passed as a separate --exclude flag by the action shell loop.
   # This is the most complex shell logic in action.yml and has no other coverage.
@@ -247,7 +209,7 @@ jobs:
             fi
           done
 
-  # ── 5. allow-empty on an empty directory ─────────────────────────────────── #
+  # ── 4. allow-empty on an empty directory ─────────────────────────────────── #
   # Scanning a directory that contains no image references must succeed (exit 0)
   # and emit a valid report with an empty findings array.
   test-allow-empty:
@@ -284,7 +246,7 @@ jobs:
           # Must be [] not null — the reporter contract guarantees this.
           jq -e '(.findings | type) == "array" and (.findings | length) == 0' "$OUT" > /dev/null
 
-  # ── 6. Empty directory fails without allow-empty ─────────────────────────── #
+  # ── 5. Empty directory fails without allow-empty ─────────────────────────── #
   # The inverse of test-allow-empty: scanning a directory with no findings must
   # exit non-zero by default.  This guards against allow-empty being silently
   # set to true unconditionally, which would make test-allow-empty a no-op.
@@ -311,7 +273,7 @@ jobs:
             exit 1
           fi
 
-  # ── 7. Absolute directory is rejected ────────────────────────────────────── #
+  # ── 6. Absolute directory is rejected ────────────────────────────────────── #
   # The action must exit non-zero when 'directory' is an absolute path because
   # absolute paths cannot be safely resolved inside the container mount.
   test-reject-absolute-path:
