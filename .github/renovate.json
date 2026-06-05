@@ -25,25 +25,28 @@
       "semanticCommitType": "feat"
     },
     {
-      "description": "Non-major dependency updates — group and automerge",
+      "description": "Non-major dependency updates — group and automerge after stabilisation window to reduce supply-chain risk",
       "matchUpdateTypes": ["minor", "patch", "digest"],
       "automerge": true,
+      "minimumReleaseAge": "3 days",
       "semanticCommitType": "chore",
       "groupName": "Non-major updates",
       "groupSlug": "non-major-updates"
     },
     {
-      "description": "GitHub Actions — automerge as a group",
+      "description": "GitHub Actions — automerge as a group after stabilisation window to reduce supply-chain risk",
       "matchManagers": ["github-actions"],
       "automerge": true,
+      "minimumReleaseAge": "3 days",
       "semanticCommitType": "chore",
       "groupName": "GitHub Actions updates",
       "groupSlug": "github-actions-updates"
     },
     {
-      "description": "Security updates — last rule wins; disable automerge and label for manual review regardless of update type",
+      "description": "Security updates — last rule wins; no stabilisation delay, disable automerge, label for immediate manual review",
       "matchCategories": ["security"],
       "automerge": false,
+      "minimumReleaseAge": "0 days",
       "labels": ["security"],
       "semanticCommitType": "fix"
     }
