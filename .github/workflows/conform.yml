@@ -14,10 +14,24 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-          # Check out the real PR branch HEAD, not the synthetic merge commit
-          # that actions/checkout produces by default on pull_request events.
-          ref: ${{ github.event.pull_request.head.sha }}
+          # pull_request:  check out the real PR head so conform sees the
+          #                commits the author wrote, not the synthetic merge
+          #                commit actions/checkout produces by default.
+          # merge_group:   pull_request.head.sha is empty; fall back to the
+          #                merge-group head commit, which is the same set of
+          #                commits that were reviewed on the PR.
+          ref: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
 
       - uses: docker://ghcr.io/siderolabs/conform:v0.1.0-alpha.31
         with:
-          args: enforce --base-branch origin/${{ github.event.pull_request.base.ref }}
+          # pull_request:  base.ref is the target branch name → origin/<branch>.
+          # merge_group:   base.ref is empty; use base_sha instead.
+          #                A SHA is a valid git revision for --base-branch and
+          #                avoids hardcoding 'main', which would silently break
+          #                if other target branches are ever added to this workflow.
+          args: >-
+            enforce --base-branch ${{
+              github.event.pull_request.base.ref != '' &&
+              format('origin/{0}', github.event.pull_request.base.ref) ||
+              github.event.merge_group.base_sha
+            }}
