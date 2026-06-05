@@ -1,0 +1,245 @@
+name: Test Action
+
+# End-to-end tests for the composite action (action.yml).
+# Each job exercises one distinct behaviour so failures are easy to attribute.
+# All jobs use `uses: ./` to run the action from the local action.yml, which in
+# turn pulls the published Docker image from ghcr.io.  This validates both the
+# shell wrapper logic and the scanner binary together.
+#
+# Note: docker run is only available on Linux runners; macOS and Windows
+# GitHub-hosted runners do not include Docker.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  # ── 1. Basic scan ────────────────────────────────────────────────────────── #
+  # Scan the whole repository.  The repo contains a Dockerfile with at least
+  # one FROM statement, so findings-count must be ≥ 1.
+  #
+  # JSON contract verified here:
+  #   • top-level object has a "findings" key that is an array (never null)
+  #   • every finding: file_path (string), line (uint), strategy (string), ref (object)
+  #   • every ref:     raw (non-empty string), parsed (bool)
+  #   • when parsed=true: registry, repository, canonical are non-empty strings
+  #   • file ends with a trailing newline (POSIX guarantee from the JSON reporter)
+  #   • findings-count output == .findings | length  (tests the count step)
+  test-basic:
+    name: Basic scan — JSON schema and findings-count contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run action
+        id: scan
+        uses: ./
+        with:
+          allow-empty: 'true'
+
+      - name: Output file exists
+        run: |
+          OUT="${{ steps.scan.outputs.output-file }}"
+          if [[ ! -f "$OUT" ]]; then
+            echo "::error::output-file '$OUT' not found"
+            exit 1
+          fi
+          echo "OUT=$OUT" >> "$GITHUB_ENV"
+
+      - name: Top-level schema — findings is an array, never null
+        run: |
+          jq -e 'type == "object"' "$OUT" > /dev/null
+          jq -e 'has("findings")' "$OUT" > /dev/null
+          jq -e '(.findings | type) == "array"' "$OUT" > /dev/null
+
+      - name: Per-finding required fields have correct types
+        run: |
+          jq -e '
+            [.findings[] |
+              (.file_path  | type == "string" and length > 0) and
+              (.line       | type == "number")                 and
+              (.strategy   | type == "string" and length > 0) and
+              (.ref        | type == "object")                 and
+              (.ref.raw    | type == "string" and length > 0) and
+              (.ref.parsed | type == "boolean")
+            ] | all
+          ' "$OUT" > /dev/null
+
+      - name: Parsed findings have non-empty registry, repository, and canonical
+        run: |
+          jq -e '
+            [.findings[] | select(.ref.parsed == true) |
+              (.ref.registry   | type == "string" and length > 0) and
+              (.ref.repository | type == "string" and length > 0) and
+              (.ref.canonical  | type == "string" and length > 0)
+            ] | all
+          ' "$OUT" > /dev/null
+
+      - name: File ends with a trailing newline
+        run: |
+          # The JSON reporter guarantees a POSIX-friendly trailing newline.
+          python3 -c "
+          import sys
+          data = open(sys.argv[1], 'rb').read()
+          if not data.endswith(b'\n'):
+              print('::error::JSON output does not end with a newline')
+              sys.exit(1)
+          " "$OUT"
+
+      - name: findings-count output equals .findings | length
+        run: |
+          REPORTED="${{ steps.scan.outputs.findings-count }}"
+          ACTUAL=$(jq '.findings | length' "$OUT")
+          if [[ "$REPORTED" != "$ACTUAL" ]]; then
+            echo "::error::findings-count output ($REPORTED) does not match .findings | length ($ACTUAL)"
+            exit 1
+          fi
+
+      - name: Dockerfile finding present with correct strategy
+        run: |
+          # The repo's own Dockerfile must appear as a "dockerfile"-strategy finding.
+          COUNT=$(jq '[.findings[] | select(.file_path == "Dockerfile" and .strategy == "dockerfile")] | length' "$OUT")
+          if [[ "$COUNT" -lt 1 ]]; then
+            echo "::error::Expected ≥1 finding with file_path=Dockerfile and strategy=dockerfile, got $COUNT"
+            exit 1
+          fi
+
+  # ── 2. Custom output-file ────────────────────────────────────────────────── #
+  # When the caller supplies output-file the report must land at that path,
+  # the output variable must reflect the resolved absolute path, and the file
+  # must pass a basic schema check.
+  test-custom-output-file:
+    name: Custom output-file path and schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run action with custom output path
+        id: scan
+        uses: ./
+        with:
+          output-file: ci-results/findings.json
+          allow-empty: 'true'
+
+      - name: File exists at custom path and output variable matches
+        run: |
+          EXPECTED="$GITHUB_WORKSPACE/ci-results/findings.json"
+          if [[ ! -f "$EXPECTED" ]]; then
+            echo "::error::Custom output file not found at '$EXPECTED'"
+            exit 1
+          fi
+          ACTUAL="${{ steps.scan.outputs.output-file }}"
+          if [[ "$ACTUAL" != "$EXPECTED" ]]; then
+            echo "::error::output-file mismatch: expected '$EXPECTED', got '$ACTUAL'"
+            exit 1
+          fi
+
+      - name: Custom output file passes schema check
+        run: |
+          OUT="${{ steps.scan.outputs.output-file }}"
+          jq -e 'type == "object" and has("findings") and ((.findings | type) == "array")' "$OUT" > /dev/null
+
+  # ── 3. Exclude reduces findings ──────────────────────────────────────────── #
+  # Running without exclude produces N findings; excluding the Dockerfile must
+  # produce strictly fewer findings and leave no Dockerfile entry in the report.
+  test-exclude:
+    name: Exclude pattern — fewer findings, no excluded file in output
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Full scan (no exclude)
+        id: full
+        uses: ./
+        with:
+          allow-empty: 'true'
+
+      - name: Scan with Dockerfile excluded
+        id: excluded
+        uses: ./
+        with:
+          exclude: 'Dockerfile'
+          allow-empty: 'true'
+
+      - name: Excluded scan has fewer findings than full scan
+        run: |
+          FULL="${{ steps.full.outputs.findings-count }}"
+          EXCL="${{ steps.excluded.outputs.findings-count }}"
+          echo "full=$FULL  excluded=$EXCL"
+          if [[ "$EXCL" -ge "$FULL" ]]; then
+            echo "::error::Excluding Dockerfile must reduce findings (full=$FULL, excluded=$EXCL)"
+            exit 1
+          fi
+
+      - name: No Dockerfile finding survives in the excluded report
+        run: |
+          OUT="${{ steps.excluded.outputs.output-file }}"
+          COUNT=$(jq '[.findings[] | select(.file_path == "Dockerfile")] | length' "$OUT")
+          if [[ "$COUNT" -gt 0 ]]; then
+            echo "::error::Found $COUNT Dockerfile finding(s) in the report after excluding 'Dockerfile'"
+            exit 1
+          fi
+
+  # ── 4. allow-empty on an empty directory ─────────────────────────────────── #
+  # Scanning a directory that contains no image references must succeed (exit 0)
+  # and emit a valid report with an empty findings array.
+  test-allow-empty:
+    name: allow-empty — zero findings, valid empty array in report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Create empty scan target
+        run: mkdir -p scan-empty
+
+      - name: Scan empty directory
+        id: scan
+        uses: ./
+        with:
+          directory: scan-empty
+          allow-empty: 'true'
+
+      - name: findings-count is exactly 0
+        run: |
+          COUNT="${{ steps.scan.outputs.findings-count }}"
+          if [[ "$COUNT" != "0" ]]; then
+            echo "::error::Expected 0 findings in empty directory, got $COUNT"
+            exit 1
+          fi
+
+      - name: Report contains an empty array, not null
+        run: |
+          OUT="${{ steps.scan.outputs.output-file }}"
+          # Must be [] not null — the reporter contract guarantees this.
+          jq -e '(.findings | type) == "array" and (.findings | length) == 0' "$OUT" > /dev/null
+
+  # ── 5. Absolute directory is rejected ────────────────────────────────────── #
+  # The action must exit non-zero when 'directory' is an absolute path because
+  # absolute paths cannot be safely resolved inside the container mount.
+  test-reject-absolute-path:
+    name: Absolute directory path is rejected
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Expect failure on absolute path
+        id: scan
+        continue-on-error: true
+        uses: ./
+        with:
+          directory: /etc
+
+      - name: Verify action exited with an error
+        run: |
+          if [[ "${{ steps.scan.outcome }}" != "failure" ]]; then
+            echo "::error::Expected action to fail when directory is an absolute path"
+            exit 1
+          fi
