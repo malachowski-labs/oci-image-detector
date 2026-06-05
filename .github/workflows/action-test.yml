@@ -1,0 +1,297 @@
+name: Test Action
+
+# End-to-end tests for the composite action (action.yml).
+# Each job exercises one distinct behaviour so failures are easy to attribute.
+# All jobs use `uses: ./` to run the action from the local action.yml, which in
+# turn pulls the published Docker image from ghcr.io.  This validates both the
+# shell wrapper logic and the scanner binary together.
+#
+# Note: docker run is only available on Linux runners; macOS and Windows
+# GitHub-hosted runners do not include Docker.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  # ── 1. Basic scan ────────────────────────────────────────────────────────── #
+  # Scan the whole repository.  The repo contains a Dockerfile with at least
+  # one FROM statement, so findings-count must be ≥ 1.
+  #
+  # JSON contract verified here:
+  #   • top-level object has a "findings" key that is an array (never null)
+  #   • every finding: file_path (string), line (uint), strategy (string), ref (object)
+  #   • every ref:     raw (non-empty string), parsed (bool)
+  #   • when parsed=true: registry, repository, canonical are non-empty strings
+  #   • file ends with a trailing newline (POSIX guarantee from the JSON reporter)
+  #   • findings-count output == .findings | length  (tests the count step pipeline)
+  test-basic:
+    name: Basic scan — JSON schema and findings-count contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run action
+        id: scan
+        uses: ./
+        with:
+          allow-empty: 'true'
+
+      - name: Output file exists
+        env:
+          OUTPUT_FILE: ${{ steps.scan.outputs.output-file }}
+        run: |
+          if [[ ! -f "$OUTPUT_FILE" ]]; then
+            echo "::error::output-file '$OUTPUT_FILE' not found"
+            exit 1
+          fi
+          # Export for all subsequent steps in this job.
+          echo "OUT=$OUTPUT_FILE" >> "$GITHUB_ENV"
+
+      # Explicit pre-condition: if this fails the schema steps below would all
+      # vacuously pass via `[] | all == true` — make the guard visible.
+      - name: findings array is non-empty
+        run: |
+          COUNT=$(jq '.findings | length' "$OUT")
+          if [[ "$COUNT" -lt 1 ]]; then
+            echo "::error::Expected ≥1 findings in basic scan, got $COUNT — subsequent schema checks would vacuously pass on an empty array"
+            exit 1
+          fi
+
+      - name: Top-level schema — findings is an array, never null
+        run: |
+          jq -e 'type == "object"' "$OUT" > /dev/null
+          jq -e 'has("findings")' "$OUT" > /dev/null
+          jq -e '(.findings | type) == "array"' "$OUT" > /dev/null
+
+      - name: Per-finding required fields have correct types
+        run: |
+          jq -e '
+            [.findings[] |
+              (.file_path  | type == "string" and length > 0) and
+              (.line       | type == "number")                 and
+              (.strategy   | type == "string" and length > 0) and
+              (.ref        | type == "object")                 and
+              (.ref.raw    | type == "string" and length > 0) and
+              (.ref.parsed | type == "boolean")
+            ] | all
+          ' "$OUT" > /dev/null
+
+      - name: Parsed findings have non-empty registry, repository, and canonical
+        run: |
+          jq -e '
+            [.findings[] | select(.ref.parsed == true) |
+              (.ref.registry   | type == "string" and length > 0) and
+              (.ref.repository | type == "string" and length > 0) and
+              (.ref.canonical  | type == "string" and length > 0)
+            ] | all
+          ' "$OUT" > /dev/null
+
+      - name: File ends with a trailing newline
+        run: |
+          # The JSON reporter guarantees a POSIX-friendly trailing newline.
+          python3 -c "
+          import sys
+          data = open(sys.argv[1], 'rb').read()
+          if not data.endswith(b'\n'):
+              print('::error::JSON output does not end with a newline')
+              sys.exit(1)
+          " "$OUT"
+
+      - name: findings-count output equals .findings | length
+        run: |
+          REPORTED="${{ steps.scan.outputs.findings-count }}"
+          ACTUAL=$(jq '.findings | length' "$OUT")
+          if [[ "$REPORTED" != "$ACTUAL" ]]; then
+            echo "::error::findings-count output ($REPORTED) does not match .findings | length ($ACTUAL)"
+            exit 1
+          fi
+
+      - name: Dockerfile finding present with correct strategy
+        run: |
+          # The repo's own Dockerfile must appear as a "dockerfile"-strategy finding.
+          COUNT=$(jq '[.findings[] | select(.file_path == "Dockerfile" and .strategy == "dockerfile")] | length' "$OUT")
+          if [[ "$COUNT" -lt 1 ]]; then
+            echo "::error::Expected ≥1 finding with file_path=Dockerfile and strategy=dockerfile, got $COUNT"
+            exit 1
+          fi
+
+  # ── 2. Exclude (single pattern) reduces findings ─────────────────────────── #
+  # Running without exclude produces N findings; excluding the Dockerfile must
+  # produce strictly fewer findings and leave no Dockerfile entry in the report.
+  test-exclude:
+    name: Exclude pattern — fewer findings, no excluded file in output
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Full scan (no exclude)
+        id: full
+        uses: ./
+        with:
+          allow-empty: 'true'
+
+      - name: Scan with Dockerfile excluded
+        id: excluded
+        uses: ./
+        with:
+          exclude: 'Dockerfile'
+          allow-empty: 'true'
+
+      - name: Capture excluded scan output path
+        env:
+          OUTPUT_FILE: ${{ steps.excluded.outputs.output-file }}
+        run: echo "EXCL_OUT=$OUTPUT_FILE" >> "$GITHUB_ENV"
+
+      - name: Excluded scan has fewer findings than full scan
+        run: |
+          FULL="${{ steps.full.outputs.findings-count }}"
+          EXCL="${{ steps.excluded.outputs.findings-count }}"
+          echo "full=$FULL  excluded=$EXCL"
+          # Precondition: full scan must have at least one finding or the
+          # comparison below is meaningless (0 >= 0 would be a false failure).
+          if [[ "$FULL" -lt 1 ]]; then
+            echo "::error::Full scan returned $FULL findings; cannot verify that exclude reduces the count"
+            exit 1
+          fi
+          if [[ "$EXCL" -ge "$FULL" ]]; then
+            echo "::error::Excluding Dockerfile must reduce findings (full=$FULL, excluded=$EXCL)"
+            exit 1
+          fi
+
+      - name: No Dockerfile finding survives in the excluded report
+        run: |
+          COUNT=$(jq '[.findings[] | select(.file_path == "Dockerfile")] | length' "$EXCL_OUT")
+          if [[ "$COUNT" -gt 0 ]]; then
+            echo "::error::Found $COUNT Dockerfile finding(s) in the report after excluding 'Dockerfile'"
+            exit 1
+          fi
+
+  # ── 3. Exclude (multi-pattern) ───────────────────────────────────────────── #
+  # The exclude input accepts newline-separated patterns; each non-empty line
+  # is passed as a separate --exclude flag by the action shell loop.
+  # This is the most complex shell logic in action.yml and has no other coverage.
+  test-exclude-multipattern:
+    name: Multi-pattern exclude — newline-separated patterns all applied
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Scan with two patterns (Dockerfile + action.yml)
+        id: scan
+        uses: ./
+        with:
+          exclude: |
+            Dockerfile
+            action.yml
+          allow-empty: 'true'
+
+      - name: Capture output path
+        env:
+          OUTPUT_FILE: ${{ steps.scan.outputs.output-file }}
+        run: echo "OUT=$OUTPUT_FILE" >> "$GITHUB_ENV"
+
+      - name: Neither excluded file appears in the report
+        run: |
+          for FILE in Dockerfile action.yml; do
+            COUNT=$(jq --arg f "$FILE" '[.findings[] | select(.file_path == $f)] | length' "$OUT")
+            if [[ "$COUNT" -gt 0 ]]; then
+              echo "::error::Found $COUNT finding(s) for '$FILE' after it was excluded"
+              exit 1
+            fi
+          done
+
+  # ── 4. allow-empty on an empty directory ─────────────────────────────────── #
+  # Scanning a directory that contains no image references must succeed (exit 0)
+  # and emit a valid report with an empty findings array.
+  test-allow-empty:
+    name: allow-empty — zero findings, valid empty array in report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Create empty scan target
+        run: mkdir -p scan-empty
+
+      - name: Scan empty directory
+        id: scan
+        uses: ./
+        with:
+          directory: scan-empty
+          allow-empty: 'true'
+
+      - name: Capture output path
+        env:
+          OUTPUT_FILE: ${{ steps.scan.outputs.output-file }}
+        run: echo "OUT=$OUTPUT_FILE" >> "$GITHUB_ENV"
+
+      - name: findings-count is exactly 0
+        run: |
+          COUNT="${{ steps.scan.outputs.findings-count }}"
+          if [[ "$COUNT" != "0" ]]; then
+            echo "::error::Expected 0 findings in empty directory, got $COUNT"
+            exit 1
+          fi
+
+      - name: Report contains an empty array, not null
+        run: |
+          # Must be [] not null — the reporter contract guarantees this.
+          jq -e '(.findings | type) == "array" and (.findings | length) == 0' "$OUT" > /dev/null
+
+  # ── 5. Empty directory fails without allow-empty ─────────────────────────── #
+  # The inverse of test-allow-empty: scanning a directory with no findings must
+  # exit non-zero by default.  This guards against allow-empty being silently
+  # set to true unconditionally, which would make test-allow-empty a no-op.
+  test-empty-dir-fails:
+    name: Empty directory exits non-zero without allow-empty
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Create empty scan target
+        run: mkdir -p scan-empty
+
+      - name: Expect failure when allow-empty is not set
+        id: scan
+        continue-on-error: true
+        uses: ./
+        with:
+          directory: scan-empty
+
+      - name: Verify action exited with an error
+        run: |
+          if [[ "${{ steps.scan.outcome }}" != "failure" ]]; then
+            echo "::error::Expected action to fail on empty directory without allow-empty"
+            exit 1
+          fi
+
+  # ── 6. Absolute directory is rejected ────────────────────────────────────── #
+  # The action must exit non-zero when 'directory' is an absolute path because
+  # absolute paths cannot be safely resolved inside the container mount.
+  test-reject-absolute-path:
+    name: Absolute directory path is rejected
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Expect failure on absolute path
+        id: scan
+        continue-on-error: true
+        uses: ./
+        with:
+          directory: /etc
+
+      - name: Verify action exited with an error
+        run: |
+          if [[ "${{ steps.scan.outcome }}" != "failure" ]]; then
+            echo "::error::Expected action to fail when directory is an absolute path"
+            exit 1
+          fi
