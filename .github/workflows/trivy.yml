@@ -22,7 +22,7 @@ jobs:
     name: Filesystem scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -33,7 +33,7 @@ jobs:
           format: sarif
           output: trivy-fs.sarif
 
-      - uses: github/codeql-action/upload-sarif@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3.28.18
+      - uses: github/codeql-action/upload-sarif@d77b13a0df3134d64a457ea9003f600b09fa1c8a # v3.36.1
         # Upload even when Trivy exits non-zero (findings present) so results
         # always land in the Security tab.
         if: always()
