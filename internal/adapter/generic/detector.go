@@ -22,29 +22,37 @@ const Strategy domain.Strategy = "generic"
 const maxScanTokenSize = 1 << 20 // 1 MiB
 
 // candidateRe matches strings that are likely OCI image references.
-// Three alternatives, in order of specificity:
 //
-//  1. registry/repo[:tag][@digest] — any host-qualified path (contains a host
-//     component with dots/port before the first slash).
-//  2. org/repo:tag — two-component Docker Hub path with an explicit tag.
-//  3. name:tag — bare Docker Hub official image (no registry or namespace
-//     prefix). Requires the name to be at least two lowercase chars and the
-//     tag to be at least two chars so that common "key:value" pairs from
-//     config files are not matched. This alternative intentionally accepts
-//     some false positives (e.g. "http:path") in exchange for catching the
-//     most common library images (nginx:1.25, redis:alpine, postgres:14).
-//     False positives are further reduced by imageref.LooksLikeImage.
+// The generic detector is the fallback for arbitrary files (prose, JSON, YAML,
+// scripts), where almost any "word/word" or "word:word" token would otherwise
+// look like an image. To keep precision high it matches only fully-qualified
+// references and deliberately ignores ambiguous short forms — bare library
+// images ("nginx:1.25"), single-namespace paths ("org/repo"), fractions
+// ("0/2"), file paths ("docs/overview.md") and config pairs ("language:go").
+// Those short forms are the job of the specialist detectors, which have file
+// format context (a Dockerfile FROM line, a Helm/Kubernetes "image:" key) to
+// resolve them safely.
+//
+// A match therefore requires both:
+//
+//  1. An identifiable registry host — a dotted domain (ghcr.io, gcr.io,
+//     123.dkr.ecr.us-east-1.amazonaws.com) or an explicit host:port
+//     (localhost:5000). A plain word is never treated as a registry.
+//  2. A mandatory tag or digest. The tag is anchored to end on an alphanumeric
+//     so trailing sentence punctuation is not captured (RE2 has no lookahead),
+//     e.g. "deploy ghcr.io/org/app:v1." yields "ghcr.io/org/app:v1".
 var candidateRe = regexp.MustCompile(
 	`(?:` +
-		// 1. registry/repo[:tag][@digest]
-		`[a-zA-Z0-9][a-zA-Z0-9._-]*(?::[0-9]+)?/[a-z0-9][a-z0-9._/-]*` +
-		`(?::[a-zA-Z0-9._-]+)?(?:@sha256:[a-fA-F0-9]+)?` +
-		`|` +
-		// 2. org/repo:tag
-		`[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._/-]*:[a-zA-Z0-9._-]+` +
-		`|` +
-		// 3. name:tag (bare Docker Hub library image)
-		`[a-z][a-z0-9-]+:[a-zA-Z0-9][a-zA-Z0-9._-]+` +
+		// registry host: dotted domain (optional :port) or host:port.
+		`(?:` +
+		`[a-z0-9]+(?:[.-][a-z0-9]+)*\.[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[0-9]+)?` +
+		`|[a-z0-9]+(?:[.-][a-z0-9]+)*:[0-9]+` +
+		`)` +
+		// repository path: one or more "/component" segments.
+		`(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+` +
+		// mandatory tag (optionally followed by a digest) or a bare digest.
+		`(?::[a-zA-Z0-9](?:[a-zA-Z0-9._-]*[a-zA-Z0-9])?(?:@sha256:[a-fA-F0-9]+)?` +
+		`|@sha256:[a-fA-F0-9]+)` +
 		`)`,
 )
 

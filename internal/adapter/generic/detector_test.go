@@ -1,6 +1,7 @@
 package generic_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/generic"
@@ -59,24 +60,58 @@ func TestDetector_Detect(t *testing.T) {
 			wantRaws: []string{"123456789.dkr.ecr.us-east-1.amazonaws.com/app:latest"},
 		},
 		{
-			// Bare Docker Hub official image: no registry or namespace prefix.
-			name:     "bare official image name:tag",
-			content:  `docker pull nginx:1.25`,
-			wantRaws: []string{"nginx:1.25"},
-		},
-		{
-			name:     "bare official image with alpine tag",
-			content:  `image: redis:alpine`,
-			wantRaws: []string{"redis:alpine"},
-		},
-		{
-			name:     "bare official image with numeric tag",
-			content:  `FROM_IMAGE=postgres:14`,
-			wantRaws: []string{"postgres:14"},
+			name:     "host:port registry with digest",
+			content:  `localhost:5000/team/app@sha256:` + strings.Repeat("a", 64),
+			wantRaws: []string{"localhost:5000/team/app@sha256:" + strings.Repeat("a", 64)},
 		},
 		{
 			name:     "no refs in plain text",
 			content:  "Hello world\nThis is just text\n",
+			wantRaws: nil,
+		},
+		{
+			// The generic detector is strict: it only matches host-qualified
+			// references with a tag or digest. Bare Docker Hub library images
+			// have no registry host and are left to the specialist detectors,
+			// which have file-format context to recognise them safely.
+			name: "bare library images are not matched",
+			content: "docker pull nginx:1.25\n" +
+				"image: redis:alpine\n" +
+				"FROM_IMAGE=postgres:14\n",
+			wantRaws: nil,
+		},
+		{
+			// Regression for #24: trailing sentence punctuation must not be
+			// captured. The tag-less "gcr.io/project/image." has no version
+			// qualifier and is ignored entirely under the strict rule.
+			name: "trailing punctuation is not captured",
+			content: "Pull gcr.io/project/image.\n" +
+				"Use ghcr.io/org/app:v1, then deploy.\n",
+			wantRaws: []string{"ghcr.io/org/app:v1"},
+		},
+		{
+			// Regression for #24: bare "org/repo" tokens are fractions or file
+			// paths, not images — no registry host, so never matched.
+			name: "bare org/repo is not an image",
+			content: "ratio is 0/2 and 1/4\n" +
+				"see 01-10-installation/overview.md\n" +
+				"docs/setup.md mentions myorg/myimage\n",
+			wantRaws: nil,
+		},
+		{
+			// Regression for #24: bare "name:tag" config pairs have no registry
+			// host and must not be reported.
+			name: "bare name:tag config pairs are not images",
+			content: "category: /language:go\n" +
+				`"extends": ["config:recommended"]` + "\n" +
+				"permissions need packages:write\n",
+			wantRaws: nil,
+		},
+		{
+			// Regression for #24: a dotted URL path without a tag (e.g. a JSON
+			// schema link) is not an image reference.
+			name:     "dotted url path without tag is not an image",
+			content:  `"$schema": "https://docs.renovatebot.com/renovate-schema.json"`,
 			wantRaws: nil,
 		},
 	}
