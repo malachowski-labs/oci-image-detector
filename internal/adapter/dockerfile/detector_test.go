@@ -74,6 +74,48 @@ func TestDetector_Detect(t *testing.T) {
 			wantRaws:  nil,
 			wantLines: nil,
 		},
+		{
+			name:      "line continuation in FROM",
+			content:   "FROM \\\n  nginx:1.25\n",
+			wantRaws:  []string{"nginx:1.25"},
+			wantLines: []uint{1},
+		},
+		{
+			name:      "comment and blank lines are ignored",
+			content:   "# syntax=docker/dockerfile:1\n\nFROM alpine:3.19\n",
+			wantRaws:  []string{"alpine:3.19"},
+			wantLines: []uint{3},
+		},
+		{
+			name:      "global ARG expanded into FROM",
+			content:   "ARG VERSION=1.25\nFROM nginx:${VERSION}\n",
+			wantRaws:  []string{"nginx:1.25"},
+			wantLines: []uint{2},
+		},
+		{
+			name:      "ARG without default stays raw",
+			content:   "ARG BASE\nFROM ${BASE}\n",
+			wantRaws:  []string{"${BASE}"},
+			wantLines: []uint{2},
+		},
+		{
+			name:      "FROM referencing a prior stage is skipped",
+			content:   "FROM golang:1.25 AS builder\nFROM builder\nRUN go build\n",
+			wantRaws:  []string{"golang:1.25"},
+			wantLines: []uint{1},
+		},
+		{
+			name:      "COPY --from external image is reported",
+			content:   "FROM alpine:3.19\nCOPY --from=nginx:1.25 /etc/nginx /etc/nginx\n",
+			wantRaws:  []string{"alpine:3.19", "nginx:1.25"},
+			wantLines: []uint{1, 2},
+		},
+		{
+			name:      "COPY --from stage reference is skipped",
+			content:   "FROM golang:1.25 AS builder\nFROM alpine:3.19\nCOPY --from=builder /app /app\nCOPY --from=0 /x /y\n",
+			wantRaws:  []string{"golang:1.25", "alpine:3.19"},
+			wantLines: []uint{1, 2},
+		},
 	}
 
 	for _, tc := range tests {
