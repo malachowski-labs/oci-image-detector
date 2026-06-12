@@ -114,6 +114,23 @@ func TestDetector_Detect(t *testing.T) {
 			content:  `"$schema": "https://docs.renovatebot.com/renovate-schema.json"`,
 			wantRaws: nil,
 		},
+		{
+			// Regression for #30: Go file:line references in stack traces match
+			// the image shape but end in a source-file extension, so they are
+			// not reported.
+			name: "go source-file references are not images",
+			content: `"github.com/kyma-project/test-infra/cmd/logging/main.go:47"` + "\n" +
+				`"v0.0.1-go1.25.2.darwin-arm64/src/runtime/proc.go:285"` + "\n",
+			wantRaws: nil,
+		},
+		{
+			// Regression for #30: a host-qualified image with an integer tag is
+			// a real reference and must be kept (a blanket numeric-tag filter
+			// would wrongly drop it).
+			name:     "host-qualified image with integer tag is kept",
+			content:  `image: gcr.io/myproj/redis:7`,
+			wantRaws: []string{"gcr.io/myproj/redis:7"},
+		},
 	}
 
 	for _, tc := range tests {

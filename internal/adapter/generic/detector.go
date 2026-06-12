@@ -114,6 +114,9 @@ func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, er
 			if !imageref.LooksLikeImage(ref) {
 				continue
 			}
+			if isSourceFileReference(ref) {
+				continue
+			}
 			findings = append(findings, domain.Finding{
 				Ref:      ref,
 				FilePath: filePath,
@@ -124,4 +127,42 @@ func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, er
 	}
 
 	return findings, scanner.Err()
+}
+
+// sourceFileExtensions are file extensions that identify a source-code or
+// markup file. An OCI repository path never ends in one of these, so a
+// candidate whose final path segment carries such an extension is a file
+// reference (e.g. a Go stack trace "github.com/org/repo/main.go:47", where the
+// ":47" is a line number, not a tag) rather than an image reference.
+//
+// A numeric-tag filter would also reject those stack traces, but it would
+// wrongly drop legitimate host-qualified images with integer tags such as
+// "gcr.io/proj/redis:7" — so we key off the source-file extension instead.
+var sourceFileExtensions = map[string]bool{
+	"go": true, "py": true, "js": true, "ts": true, "jsx": true, "tsx": true,
+	"rb": true, "java": true, "rs": true, "c": true, "cc": true, "cpp": true,
+	"cxx": true, "h": true, "hpp": true, "cs": true, "php": true, "kt": true,
+	"kts": true, "swift": true, "scala": true, "sh": true, "bash": true,
+	"pl": true, "pm": true, "lua": true, "ex": true, "exs": true, "erl": true,
+	"clj": true, "dart": true, "groovy": true, "m": true, "mm": true,
+}
+
+// isSourceFileReference reports whether ref's repository path points at a
+// source-code file (its final path segment ends in a known source-file
+// extension) rather than at an image. Used to drop file:line references that
+// happen to match the image-reference shape.
+func isSourceFileReference(ref domain.ImageRef) bool {
+	repo := ref.Repository
+	if repo == "" {
+		repo = ref.Raw
+	}
+	last := repo
+	if i := strings.LastIndexByte(repo, '/'); i >= 0 {
+		last = repo[i+1:]
+	}
+	dot := strings.LastIndexByte(last, '.')
+	if dot < 0 {
+		return false
+	}
+	return sourceFileExtensions[last[dot+1:]]
 }
