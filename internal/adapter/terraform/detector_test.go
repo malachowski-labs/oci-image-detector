@@ -40,7 +40,7 @@ func TestDetector_DetectDir_directString(t *testing.T) {
 		"main.tf": {Data: []byte(`
 resource "aws_ecs_task_definition" "app" {
   container_definitions = jsonencode([{
-    image = "nginx:1.25"
+    image = "ghcr.io/org/app:1.25"
   }])
 }
 `)},
@@ -52,11 +52,29 @@ resource "aws_ecs_task_definition" "app" {
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
 	}
-	if findings[0].Ref.Raw != "nginx:1.25" {
-		t.Errorf("Raw = %q, want %q", findings[0].Ref.Raw, "nginx:1.25")
+	if findings[0].Ref.Raw != "ghcr.io/org/app:1.25" {
+		t.Errorf("Raw = %q, want %q", findings[0].Ref.Raw, "ghcr.io/org/app:1.25")
 	}
 	if findings[0].Strategy != terraform.Strategy {
 		t.Errorf("Strategy = %q, want %q", findings[0].Strategy, terraform.Strategy)
+	}
+}
+
+// TestDetector_DetectDir_bareImageNotReported documents the precision contract:
+// a bare library image without a registry host (e.g. "nginx:1.25") is too
+// ambiguous to distinguish from arbitrary "word:word" strings in a .tf file,
+// so the detector deliberately does not report it. Resolving such short forms
+// is the job of detectors with structural context (Dockerfile, Helm).
+func TestDetector_DetectDir_bareImageNotReported(t *testing.T) {
+	dir := fstest.MapFS{
+		"main.tf": {Data: []byte(`image = "nginx:1.25"`)},
+	}
+	findings, err := terraform.New().DetectDir(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 0 {
+		t.Errorf("expected no findings for bare image, got: %v", findings)
 	}
 }
 
@@ -124,10 +142,10 @@ func TestDetector_DetectDir_tfvarsOverride(t *testing.T) {
 	dir := fstest.MapFS{
 		"variables.tf": {Data: []byte(`
 variable "image_uri" {
-  default = "nginx:latest"
+  default = "ghcr.io/org/app:latest"
 }
 `)},
-		"terraform.tfvars": {Data: []byte(`image_uri = "nginx:1.25"`)},
+		"terraform.tfvars": {Data: []byte(`image_uri = "ghcr.io/org/app:1.25"`)},
 		"main.tf":          {Data: []byte(`image = var.image_uri`)},
 	}
 	findings, err := terraform.New().DetectDir(dir)
@@ -136,12 +154,12 @@ variable "image_uri" {
 	}
 	found := false
 	for _, f := range findings {
-		if f.Ref.Raw == "nginx:1.25" {
+		if f.Ref.Raw == "ghcr.io/org/app:1.25" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected tfvars value nginx:1.25, got: %v", findings)
+		t.Errorf("expected tfvars value ghcr.io/org/app:1.25, got: %v", findings)
 	}
 }
 
@@ -169,7 +187,12 @@ variable "image_tag" {
 	}
 }
 
-func TestDetector_DetectDir_unresolvableVarKeptAsRaw(t *testing.T) {
+// TestDetector_DetectDir_unresolvableVarNotReported documents that an image
+// reference whose tag is an unresolvable template (e.g. "${var.unknown_tag}")
+// is not reported. The strict candidate filter cannot validate a reference
+// whose version component is still a placeholder, so such strings are dropped
+// rather than emitted as raw findings.
+func TestDetector_DetectDir_unresolvableVarNotReported(t *testing.T) {
 	dir := fstest.MapFS{
 		"main.tf": {Data: []byte(`image = "ghcr.io/org/app:${var.unknown_tag}"`)},
 	}
@@ -177,14 +200,41 @@ func TestDetector_DetectDir_unresolvableVarKeptAsRaw(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	found := false
-	for _, f := range findings {
-		if f.Ref.Raw == "ghcr.io/org/app:${var.unknown_tag}" && !f.Ref.Parsed {
-			found = true
-		}
+	if len(findings) != 0 {
+		t.Errorf("expected no findings for unresolvable template tag, got: %v", findings)
 	}
-	if !found {
-		t.Errorf("expected raw-only finding for unresolvable var, got: %v", findings)
+}
+
+// TestDetector_DetectDir_falsePositivesRejected locks in the fix for issue #34:
+// IAM members, GCP resource paths, WIF principals, module sources, provider
+// names, Kubernetes API versions and HCL/YAML fragments must not be reported
+// as image references.
+func TestDetector_DetectDir_falsePositivesRejected(t *testing.T) {
+	dir := fstest.MapFS{
+		"main.tf": {Data: []byte(`
+locals {
+  member      = "serviceAccount:foo@my-project.iam.gserviceaccount.com"
+  group       = "group:team@example.com"
+  repo_path   = "projects/my-project/locations/europe/repositories/my-repo"
+  principal   = "principalSet://iam.googleapis.com/pool/attribute.x:value"
+  module_src  = "git::https://example.com/org/repo.git//modules/mod?ref=v1.0.0"
+  role        = "roles/artifactregistry.reader"
+  rel_module  = "../../modules/artifact-registry"
+  provider    = "hashicorp/google"
+  api_version = "core.gardener.cloud/v1beta1"
+  k8s_api     = "apps/v1"
+  chart_url   = "https://charts.external-secrets.io"
+  oci_chart   = "oci://registry.example.com/project/charts/myapp"
+  location    = var.enabled ? var.location : error("location required")
+}
+`)},
+	}
+	findings, err := terraform.New().DetectDir(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 0 {
+		t.Errorf("expected no findings for false-positive strings, got: %v", findings)
 	}
 }
 
