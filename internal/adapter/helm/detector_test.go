@@ -36,21 +36,13 @@ func TestDetector_Detect(t *testing.T) {
 		wantRaws []string
 	}{
 		{
-			name: "repository and tag",
+			name: "repository and tag under image parent",
 			content: `
 image:
   repository: nginx
   tag: "1.25"
 `,
 			wantRaws: []string{"nginx:1.25"},
-		},
-		{
-			name: "repository without tag",
-			content: `
-image:
-  repository: ghcr.io/org/app
-`,
-			wantRaws: []string{"ghcr.io/org/app"},
 		},
 		{
 			name: "registry repository and tag (three-key Bitnami convention)",
@@ -63,16 +55,26 @@ image:
 			wantRaws: []string{"myregistry.example.com/myapp:1.0"},
 		},
 		{
-			name: "registry without tag",
+			name: "repository and digest under image parent",
 			content: `
 image:
-  registry: myregistry.example.com
-  repository: myapp
+  repository: ghcr.io/org/app
+  digest: sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1
 `,
-			wantRaws: []string{"myregistry.example.com/myapp"},
+			wantRaws: []string{"ghcr.io/org/app@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1"},
 		},
 		{
-			name: "multiple images",
+			name: "tag and digest both present (canonical form keeps both)",
+			content: `
+image:
+  repository: ghcr.io/org/app
+  tag: v1
+  digest: sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1
+`,
+			wantRaws: []string{"ghcr.io/org/app:v1@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1"},
+		},
+		{
+			name: "multiple images under image-shaped parents",
 			content: `
 frontend:
   image:
@@ -81,6 +83,44 @@ frontend:
 backend:
   image:
     repository: ghcr.io/org/api
+    tag: v2.0.0
+`,
+			wantRaws: []string{"nginx:1.25", "ghcr.io/org/api:v2.0.0"},
+		},
+		{
+			name: "image-shaped sibling key (mainImage)",
+			content: `
+mainImage:
+  repository: nginx
+  tag: "1.25"
+`,
+			wantRaws: []string{"nginx:1.25"},
+		},
+		{
+			name: "image-shaped sibling key with hyphen (init-image)",
+			content: `
+init-image:
+  repository: ghcr.io/org/init
+  tag: v1
+`,
+			wantRaws: []string{"ghcr.io/org/init:v1"},
+		},
+		{
+			name: "image-shaped sibling key with underscore (metrics_image)",
+			content: `
+metrics_image:
+  repository: ghcr.io/org/metrics
+  tag: v1
+`,
+			wantRaws: []string{"ghcr.io/org/metrics:v1"},
+		},
+		{
+			name: "image sequence inherits parent key",
+			content: `
+images:
+  - repository: nginx
+    tag: "1.25"
+  - repository: ghcr.io/org/api
     tag: v2.0.0
 `,
 			wantRaws: []string{"nginx:1.25", "ghcr.io/org/api:v2.0.0"},
@@ -102,6 +142,55 @@ image:
 		{
 			name:     "empty file",
 			content:  "",
+			wantRaws: nil,
+		},
+
+		// --- Regression guards (issue #36) ---------------------------------
+
+		{
+			name: "ocm_repo_mappings repository key is not an image block",
+			content: `
+ocm_repo_mappings:
+  - prefix: "kyma-project.io/module"
+    repository: europe-docker.pkg.dev/kyma-project/kyma-modules
+`,
+			wantRaws: nil,
+		},
+		{
+			name: "rescoring_ruleset.ref.repository pointing at a Git URL is not an image block",
+			content: `
+rescoring_ruleset:
+  cfg_name: example
+  ref:
+    repository: https://example.com/org/repo
+    path: rescorings.yaml
+`,
+			wantRaws: nil,
+		},
+		{
+			name: "tag-less repository under image parent is rejected",
+			content: `
+image:
+  repository: ghcr.io/org/app
+`,
+			wantRaws: nil,
+		},
+		{
+			name: "registry+repository without tag is rejected",
+			content: `
+image:
+  registry: myregistry.example.com
+  repository: myapp
+`,
+			wantRaws: nil,
+		},
+		{
+			name: "url literal under image parent is dropped by the candidate gate",
+			content: `
+image:
+  repository: https://example.com/org/app
+  tag: v1
+`,
 			wantRaws: nil,
 		},
 	}
