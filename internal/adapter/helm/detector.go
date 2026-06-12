@@ -145,6 +145,13 @@ func isImageParent(key string) bool {
 // (i.e. version-pinned) image references, and a registry path on its own is
 // almost always non-image config (an OCM repository, a registry endpoint, …).
 //
+// `repository` values that contain `://` are treated as URL literals (Git
+// repos, Helm `oci://` chart references, https endpoints) and rejected
+// up-front. go-containerregistry's WeakValidation otherwise accepts strings
+// like `https://example.com/org/app:v1` as references because the trailing
+// `:v1` matches its tag grammar — the structural parent gate is not enough
+// to keep those out.
+//
 // Once assembled, the raw is validated with `imageref.Parse`:
 //
 //   - Parsed=true means go-containerregistry recognised the string as a
@@ -152,18 +159,19 @@ func isImageParent(key string) bool {
 //     parent + tag/digest sibling) to vouch for it. This keeps Bitnami short
 //     forms like `repository: nginx, tag: "1.25"` working even though their
 //     registry host defaults to docker.io.
-//   - Parsed=false means the raw contained a template placeholder (the only
-//     case `imageref.Parse` rejects without erroring). Templated tags
-//     (`{{ .Values.imageTag }}`, `${var}`) are still legitimate findings —
-//     the version is unresolved at scan time but the consumer can resolve
-//     it later. Anything else that fails to parse (e.g. a `https://…` URL
-//     literal smuggled into `repository:`) is dropped.
+//   - Parsed=false is preserved only when the raw contains a template
+//     placeholder (`{{ .Values.imageTag }}`, `${var}`). Those are legitimate
+//     findings — the version is unresolved at scan time. Any other parse
+//     failure is dropped.
 func imageFinding(node *yaml.Node, filePath string) (domain.Finding, bool) {
 	repo, repoLine := mapValue(node, "repository")
-	if repo == "" {
+	if repo == "" || strings.Contains(repo, "://") {
 		return domain.Finding{}, false
 	}
 	registry, _ := mapValue(node, "registry")
+	if strings.Contains(registry, "://") {
+		return domain.Finding{}, false
+	}
 	tag, _ := mapValue(node, "tag")
 	digest, _ := mapValue(node, "digest")
 	if tag == "" && digest == "" {
