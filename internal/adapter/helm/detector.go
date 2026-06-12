@@ -36,9 +36,9 @@ func (d *Detector) Match(filePath string) bool {
 // It walks the YAML document tree looking for image blocks: mapping nodes that
 // (a) sit under an image-shaped parent key (e.g. "image", "mainImage"), and
 // (b) carry a "repository" plus a pinning qualifier (tag or digest). The
-// shared `imageref.Candidates` filter is applied as a final precision gate so
-// that any non-image string that survives the structural checks (for example,
-// a `repository: https://…` literal) is dropped.
+// assembled raw is then validated with `imageref.Parse` so any non-image
+// string that survives the structural checks (a `repository: https://…`
+// literal, a free-form description, …) is dropped.
 //
 // The Bitnami `image: { registry?, repository, tag, digest? }` convention is
 // the canonical shape this detector targets. Other conventions that use a
@@ -145,12 +145,19 @@ func isImageParent(key string) bool {
 // (i.e. version-pinned) image references, and a registry path on its own is
 // almost always non-image config (an OCM repository, a registry endpoint, …).
 //
-// The assembled raw is then validated with `imageref.Candidates` so that any
-// non-image string that slipped through the structural checks (e.g. a
-// `repository: https://…` literal) is dropped. Templated tags (`{{ .Values.x }}`,
-// `${var}`) bypass this gate because `imageref.Parse` returns Parsed=false for
-// them by design and they are still legitimate findings — the version is just
-// unresolved at scan time.
+// Once assembled, the raw is validated with `imageref.Parse`:
+//
+//   - Parsed=true means go-containerregistry recognised the string as a
+//     reference; we trust the surrounding structural context (image-shaped
+//     parent + tag/digest sibling) to vouch for it. This keeps Bitnami short
+//     forms like `repository: nginx, tag: "1.25"` working even though their
+//     registry host defaults to docker.io.
+//   - Parsed=false means the raw contained a template placeholder (the only
+//     case `imageref.Parse` rejects without erroring). Templated tags
+//     (`{{ .Values.imageTag }}`, `${var}`) are still legitimate findings —
+//     the version is unresolved at scan time but the consumer can resolve
+//     it later. Anything else that fails to parse (e.g. a `https://…` URL
+//     literal smuggled into `repository:`) is dropped.
 func imageFinding(node *yaml.Node, filePath string) (domain.Finding, bool) {
 	repo, repoLine := mapValue(node, "repository")
 	if repo == "" {
@@ -166,10 +173,7 @@ func imageFinding(node *yaml.Node, filePath string) (domain.Finding, bool) {
 	raw := buildRaw(registry, repo, tag, digest)
 	ref := imageref.Parse(raw)
 
-	// Parsed=false for templated raws is still a valid finding (see comment
-	// above). For non-templated raws, require Candidates() to confirm the
-	// result has the structural shape of an OCI reference.
-	if ref.Parsed && len(imageref.Candidates(raw)) == 0 {
+	if !ref.Parsed && !containsTemplate(raw) {
 		return domain.Finding{}, false
 	}
 
@@ -179,6 +183,17 @@ func imageFinding(node *yaml.Node, filePath string) (domain.Finding, bool) {
 		Line:     uint(repoLine),
 		Strategy: Strategy,
 	}, true
+}
+
+// containsTemplate reports whether s contains a known template placeholder
+// that could explain why imageref.Parse marked the ref unparsed. Mirrors the
+// list in imageref.containsTemplate; kept local to avoid widening that
+// package's API for a single caller.
+func containsTemplate(s string) bool {
+	return strings.Contains(s, "$") ||
+		strings.Contains(s, "{{") ||
+		strings.Contains(s, "%(") ||
+		strings.Contains(s, "#{")
 }
 
 // mapValue returns the string value and line number for key in a MappingNode.
