@@ -17,10 +17,6 @@ import (
 const Strategy domain.Strategy = "terraform"
 
 var (
-	// stringLiteralRe matches any double-quoted string (including those with
-	// interpolation — the $ is handled after capture, not excluded here).
-	stringLiteralRe = regexp.MustCompile(`"([^"\n\\]+)"`)
-
 	// varBlockStartRe locates the opening of a variable block so we can
 	// extract the full body with balanced-brace counting (see extractBalancedBlock).
 	// Using [\w-]+ to support hyphenated HCL identifiers (e.g. "base-image").
@@ -182,6 +178,16 @@ func extractTFVars(content string, vars map[string]string) {
 }
 
 // scanTFFile extracts image ref findings from a single .tf file.
+//
+// Candidates are identified with imageref.Candidates — the same strict
+// registry-host + path + tag/digest filter the generic detector uses — rather
+// than treating every quoted string as a potential image. This keeps the
+// detector from emitting IAM members, GCP resource paths, module sources and
+// other quoted strings that merely contain "/" or ":". Variable and
+// interpolation references are resolved first so the filter sees concrete
+// values; references that resolve to a bare form (e.g. "nginx:1.25") or that
+// cannot be resolved are intentionally not reported, matching the generic
+// detector's precision contract.
 func scanTFFile(filename string, content []byte, vars map[string]string) []domain.Finding {
 	lines := strings.Split(string(content), "\n")
 	var findings []domain.Finding
@@ -189,36 +195,26 @@ func scanTFFile(filename string, content []byte, vars map[string]string) []domai
 	for lineIdx, line := range lines {
 		lineNum := uint(lineIdx + 1)
 
-		// Case 1: bare var.name reference (the RHS is exactly a variable).
-		if m := varRefRe.FindStringSubmatch(afterEquals(line)); m != nil {
-			varName := m[1]
-			if val, ok := vars[varName]; ok {
-				ref := imageref.Parse(val)
-				if imageref.LooksLikeImage(ref) {
-					findings = append(findings, domain.Finding{
-						Ref:      ref,
-						FilePath: filename,
-						Line:     lineNum,
-						Strategy: Strategy,
-					})
-				}
+		// Resolve ${var.name} interpolations so the filter sees concrete values.
+		resolved := varInterpolRe.ReplaceAllStringFunc(line, func(match string) string {
+			sub := varInterpolRe.FindStringSubmatch(match)
+			if val, ok := vars[sub[1]]; ok {
+				return val
 			}
-			continue
+			return match // unresolvable — keep placeholder
+		})
+
+		candidates := imageref.Candidates(resolved)
+
+		// Case: bare `<lhs> = var.name` reference (the RHS is exactly a
+		// variable). Scan the resolved value for candidates too.
+		if m := varRefRe.FindStringSubmatch(afterEquals(line)); m != nil {
+			if val, ok := vars[m[1]]; ok {
+				candidates = append(candidates, imageref.Candidates(val)...)
+			}
 		}
 
-		// Case 2: quoted string literals on this line.
-		for _, m := range stringLiteralRe.FindAllStringSubmatch(line, -1) {
-			raw := m[1]
-
-			// Resolve ${var.name} interpolations.
-			raw = varInterpolRe.ReplaceAllStringFunc(raw, func(match string) string {
-				sub := varInterpolRe.FindStringSubmatch(match)
-				if val, ok := vars[sub[1]]; ok {
-					return val
-				}
-				return match // unresolvable — keep placeholder
-			})
-
+		for _, raw := range candidates {
 			ref := imageref.Parse(raw)
 			if !imageref.LooksLikeImage(ref) {
 				continue

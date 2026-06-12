@@ -77,6 +77,66 @@ func TestParse(t *testing.T) {
 	}
 }
 
+func TestCandidates(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{
+			name: "fully qualified ref",
+			in:   `image = "ghcr.io/org/app:v1.2.3"`,
+			want: []string{"ghcr.io/org/app:v1.2.3"},
+		},
+		{
+			name: "two refs on one line",
+			in:   `images: gcr.io/proj/a:v1 gcr.io/proj/b:v2`,
+			want: []string{"gcr.io/proj/a:v1", "gcr.io/proj/b:v2"},
+		},
+		{
+			name: "bare library image has no registry host",
+			in:   `image = "nginx:1.25"`,
+			want: nil,
+		},
+		{
+			name: "untagged ref is ignored",
+			in:   `"core.gardener.cloud/v1beta1"`,
+			want: nil,
+		},
+		{
+			name: "provider name has no host or tag",
+			in:   `"hashicorp/google"`,
+			want: nil,
+		},
+		{
+			// The host+path+tag-shaped tail of a WIF principal must not be
+			// reported: it is preceded by "/" so it is part of the URI.
+			name: "wif principal tail is rejected",
+			in:   `"principalSet://iam.googleapis.com/pool/attribute.x:value"`,
+			want: nil,
+		},
+		{
+			name: "tagged image inside a URL is rejected",
+			in:   `oci://registry.example.com/charts/app:1.0`,
+			want: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := imageref.Candidates(tc.in)
+			if len(got) != len(tc.want) {
+				t.Fatalf("Candidates(%q) = %v, want %v", tc.in, got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("Candidates(%q)[%d] = %q, want %q", tc.in, i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestLooksLikeImage(t *testing.T) {
 	parsedWithSlash := imageref.Parse("ghcr.io/org/app:v1")
 	parsedWithColon := imageref.Parse("nginx:1.25")
