@@ -106,21 +106,33 @@ func walkNode(node *yaml.Node, parentKey, filePath string, findings *[]domain.Fi
 	}
 }
 
+// imageParentSuffixes are the case-insensitive suffixes that mark a mapping
+// key as an image attribute. Both singular and plural forms are accepted —
+// the plural covers the common `images: [{repository, tag}, …]` collection
+// pattern whose elements inherit the parent key. An optional hyphen or
+// underscore separator covers kebab- and snake-cased variants
+// (`init-image`, `metrics_image`, `sidecar-images`).
+//
+// Matching is "exact key OR ends-with suffix", which lets `mainImage`,
+// `extraImages`, etc. through while still rejecting unrelated keys.
+var imageParentSuffixes = []string{
+	"image", "images",
+	"-image", "-images",
+	"_image", "_images",
+}
+
 // isImageParent reports whether key looks like a Helm image attribute name.
-// Matches "image" exactly and any "<x>image", "<x>-image", "<x>_image" form
-// (case-insensitive), which covers the common conventions
-// (`mainImage`, `sidecarImage`, `metrics_image`, `init-image`).
 func isImageParent(key string) bool {
 	if key == "" {
 		return false
 	}
 	lower := strings.ToLower(key)
-	if lower == "image" {
-		return true
+	for _, suffix := range imageParentSuffixes {
+		if lower == suffix || strings.HasSuffix(lower, suffix) {
+			return true
+		}
 	}
-	return strings.HasSuffix(lower, "image") ||
-		strings.HasSuffix(lower, "-image") ||
-		strings.HasSuffix(lower, "_image")
+	return false
 }
 
 // imageFinding extracts a finding from a mapping node already known to sit in
