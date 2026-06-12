@@ -92,6 +92,11 @@ func Parse(raw string) domain.ImageRef {
 		tag = r.TagStr()
 	case name.Digest:
 		digest = r.DigestStr()
+		// go-containerregistry resolves "name:tag@digest" to a name.Digest and
+		// discards the tag. Recover it from the raw string so both fields are
+		// populated, per the domain.ImageRef contract; Canonical still emits the
+		// digest alone.
+		tag = tagFromTaggedDigest(raw)
 	}
 
 	parsed, err := domain.NewParsedImageRef(raw, registry, repository, tag, digest)
@@ -101,6 +106,22 @@ func Parse(raw string) domain.ImageRef {
 	}
 
 	return parsed
+}
+
+// tagFromTaggedDigest extracts the tag from a "name:tag@digest" reference, or
+// returns "" when no tag is present. The tag, if any, follows the last ':' that
+// comes after the last '/'; an earlier colon belongs to a registry host:port.
+// raw is assumed to have already parsed as a valid digest reference, so the
+// extracted tag needs no further validation.
+func tagFromTaggedDigest(raw string) string {
+	base, _, ok := strings.Cut(raw, "@")
+	if !ok {
+		return ""
+	}
+	if colon := strings.LastIndex(base, ":"); colon > strings.LastIndex(base, "/") {
+		return base[colon+1:]
+	}
+	return ""
 }
 
 // LooksLikeImage reports whether ref is likely an OCI image reference worth
