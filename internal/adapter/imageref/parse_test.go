@@ -12,25 +12,49 @@ func TestParse(t *testing.T) {
 		raw        string
 		wantParsed bool
 		wantCanon  string
+		wantTag    string
+		wantDigest string
 	}{
 		{
 			raw:        "nginx:1.25",
 			wantParsed: true,
 			wantCanon:  "index.docker.io/library/nginx:1.25",
+			wantTag:    "1.25",
 		},
 		{
 			raw:        "nginx",
 			wantParsed: true,
 			wantCanon:  "index.docker.io/library/nginx:latest",
+			wantTag:    "latest",
 		},
 		{
 			raw:        "ghcr.io/org/app:v1.2.3",
 			wantParsed: true,
 			wantCanon:  "ghcr.io/org/app:v1.2.3",
+			wantTag:    "v1.2.3",
 		},
 		{
 			raw:        "ghcr.io/org/app@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
 			wantParsed: true,
+			wantDigest: "sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
+		},
+		{
+			// Tag + digest: both fields populated, but Canonical uses the digest
+			// alone (https://github.com/malachowski-labs/oci-image-detector/issues/38).
+			raw:        "golang:1.26-alpine@sha256:7a3e50096189ad57c9f9f865e7e4aa8585ed1585248513dc5cda498e2f41812c",
+			wantParsed: true,
+			wantCanon:  "index.docker.io/library/golang@sha256:7a3e50096189ad57c9f9f865e7e4aa8585ed1585248513dc5cda498e2f41812c",
+			wantTag:    "1.26-alpine",
+			wantDigest: "sha256:7a3e50096189ad57c9f9f865e7e4aa8585ed1585248513dc5cda498e2f41812c",
+		},
+		{
+			// Tag + digest behind an explicit host:port registry — the host's
+			// colon must not be mistaken for the tag separator.
+			raw:        "localhost:5000/app:v1@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
+			wantParsed: true,
+			wantCanon:  "localhost:5000/app@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
+			wantTag:    "v1",
+			wantDigest: "sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
 		},
 		{
 			// Terraform interpolation — must not be parsed.
@@ -72,6 +96,12 @@ func TestParse(t *testing.T) {
 				if got := ref.Canonical(); got != tc.wantCanon {
 					t.Errorf("Canonical() = %q, want %q", got, tc.wantCanon)
 				}
+			}
+			if ref.Tag != tc.wantTag {
+				t.Errorf("Tag = %q, want %q", ref.Tag, tc.wantTag)
+			}
+			if ref.Digest != tc.wantDigest {
+				t.Errorf("Digest = %q, want %q", ref.Digest, tc.wantDigest)
 			}
 		})
 	}
