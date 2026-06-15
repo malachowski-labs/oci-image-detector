@@ -7,6 +7,7 @@ A production-ready CLI tool and GitHub Action that **recursively scans a directo
 | `Dockerfile` / `Containerfile` | `FROM` instructions (incl. `--platform`, `AS` aliases, `scratch`) |
 | Helm `values.yaml` / `values-*.yaml` | `registry` + `repository` + `tag` fields |
 | Terraform `*.tf` | `image` / `container` / `source` variable defaults, locals, and resource arguments |
+| GitHub Actions `.github/workflows/*.yml` | `uses: docker://image:tag` steps, `container.image`, `services.<name>.image` |
 | Any text file | Bare `<registry>/<image>:<tag>`, `<image>:<tag>`, and `@sha256:` references |
 
 ---
@@ -55,6 +56,7 @@ oci-image-detector [flags]
 |---|---|---|---|
 | `--directory` | `-d` | `.` | Root directory to scan |
 | `--exclude` | `-e` | — | Glob pattern to exclude (repeatable, doublestar syntax). Always-excluded: `.git/**`, `go.sum` |
+| `--exclude-images` | | — | Glob pattern matched against the image reference string to drop findings (repeatable, doublestar syntax, e.g. `localhost:5000/**`) |
 | `--output-file` | `-o` | — | Write findings as JSON to this file (in addition to stdout) |
 | `--allow-empty` | | `false` | Exit 0 when no image references are found |
 | `--verbose` | `-v` | `false` | Enable debug logging on stderr |
@@ -167,6 +169,7 @@ The action runs the same Docker image used locally — no extra permissions requ
 | `version` | `latest` | Docker image tag to run, e.g. `v0.5.0` |
 | `directory` | `.` | Root directory to scan (relative to repo root) |
 | `exclude` | `''` | Newline-separated doublestar glob patterns to exclude |
+| `exclude-images` | `''` | Newline-separated doublestar glob patterns matched against the image reference string (e.g. `localhost:5000/**`) |
 | `allow-empty` | `false` | Exit 0 when no image references are found |
 | `verbose` | `false` | Enable debug logging |
 
@@ -213,6 +216,65 @@ jobs:
         if: steps.scan.outputs.findings-count == '0'
         run: echo "::warning::No OCI image references detected"
 ```
+
+---
+
+## Suppressing findings
+
+Two complementary mechanisms let you silence specific findings without excluding entire files.
+
+### Inline annotation
+
+Add `oci-image-detector:ignore` anywhere on the same line as the image reference. The whole line is skipped regardless of file type.
+
+```go
+// "localhost:5000/image:v1" -> "localhost:5000/image"  // oci-image-detector:ignore
+```
+
+```dockerfile
+FROM nginx:latest  # oci-image-detector:ignore
+```
+
+```hcl
+image = "localhost:5000/example:v1"  # oci-image-detector:ignore
+```
+
+The annotation must be an exact token — `oci-image-detector:ignoreXYZ` is **not** a match.
+
+> **Note for Helm values files:** The annotation must appear as an inline YAML comment on the `repository:` line:
+> ```yaml
+> image:
+>   repository: localhost:5000/example  # oci-image-detector:ignore
+>   tag: v1
+> ```
+
+### `--exclude-images` / `exclude-images` input
+
+Filter findings by image reference using [doublestar](https://github.com/bmatcuk/doublestar) glob patterns. Useful when the same placeholder image appears across many files, or when the source is generated and cannot be edited.
+
+**CLI:**
+
+```bash
+oci-image-detector \
+  --exclude-images 'localhost:5000/**' \
+  --exclude-images '*.example.com/**'
+```
+
+**GitHub Action:**
+
+```yaml
+- uses: malachowski-labs/oci-image-detector@v1.2.0
+  with:
+    exclude-images: |
+      localhost:5000/**
+      *.example.com/**
+```
+
+| Scenario | Inline annotation | `exclude-images` |
+|---|---|---|
+| Single occurrence in editable source | best fit | works but overkill |
+| Pattern across many files / generated code | awkward | best fit |
+| Vendored / read-only source | not possible | best fit |
 
 ---
 
