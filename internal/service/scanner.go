@@ -54,6 +54,9 @@ func (s *ScanService) ScanFS(ctx context.Context, fsys fs.FS, opts port.ScanOpti
 	if err := validatePatterns(opts.Exclude); err != nil {
 		return nil, err
 	}
+	if err := validatePatterns(opts.ExcludeImages); err != nil {
+		return nil, fmt.Errorf("exclude-images: %w", err)
+	}
 
 	var findings []domain.Finding
 
@@ -92,7 +95,47 @@ func (s *ScanService) ScanFS(ctx context.Context, fsys fs.FS, opts port.ScanOpti
 	}
 
 	sortFindings(findings)
+
+	findings, err = filterExcludedImages(findings, opts.ExcludeImages)
+	if err != nil {
+		return nil, err
+	}
+
 	return findings, nil
+}
+
+// filterExcludedImages removes findings whose raw image reference matches any
+// of the provided doublestar glob patterns.
+func filterExcludedImages(findings []domain.Finding, patterns []string) ([]domain.Finding, error) {
+	if len(patterns) == 0 {
+		return findings, nil
+	}
+	out := findings[:0]
+	for _, f := range findings {
+		excluded, err := isExcludedImage(f.Ref.Raw, patterns)
+		if err != nil {
+			return nil, err
+		}
+		if !excluded {
+			out = append(out, f)
+		}
+	}
+	return out, nil
+}
+
+// isExcludedImage reports whether raw matches any of the provided doublestar
+// glob patterns. Patterns must have been validated with validatePatterns first.
+func isExcludedImage(raw string, patterns []string) (bool, error) {
+	for _, pattern := range patterns {
+		matched, err := doublestar.Match(pattern, raw)
+		if err != nil {
+			return false, fmt.Errorf("invalid image exclude pattern %q: %w", pattern, err)
+		}
+		if matched {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // handleDir checks whether any DirectoryAwareDetector claims this directory.
