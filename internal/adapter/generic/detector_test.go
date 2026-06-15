@@ -28,6 +28,8 @@ func TestDetector_Match(t *testing.T) {
 		{"values.yaml", false},
 		{"values.yml", false},
 		{"charts/app/values.yaml", false},
+		{".github/workflows/ci.yml", false},
+		{".github/actions/setup/action.yml", false},
 	}
 	for _, tc := range cases {
 		if got := det.Match(tc.path); got != tc.want {

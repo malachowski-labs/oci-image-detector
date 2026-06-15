@@ -57,6 +57,13 @@ func (d *Detector) Match(filePath string) bool {
 		return false
 	}
 
+	// GitHub Actions workflow and action files — owned by the githubactions detector.
+	lowerPath := strings.ToLower(filePath)
+	if strings.Contains(lowerPath, ".github/workflows/") ||
+		strings.Contains(lowerPath, ".github/actions/") {
+		return false
+	}
+
 	return true
 }
 
