@@ -15,6 +15,7 @@ import (
 
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/dockerfile"
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/generic"
+	"github.com/malachowski-labs/oci-image-detector/internal/adapter/githubactions"
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/helm"
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/reporter"
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/terraform"
@@ -118,6 +119,7 @@ func run(ctx context.Context, opts options) error {
 			// Order matters: first match wins. Specialist detectors before generic.
 			dockerfile.New(),
 			helm.New(),
+			githubactions.New(),
 			generic.New(),
 		},
 		[]port.DirectoryAwareDetector{
