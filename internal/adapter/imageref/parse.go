@@ -141,6 +141,27 @@ func LooksLikeImage(ref domain.ImageRef) bool {
 	return strings.Contains(ref.Raw, ":") || strings.Contains(ref.Raw, "@sha256:")
 }
 
+// IgnoreAnnotation is the inline marker that suppresses detection for a single
+// line. When any detector finds this string on a line (or logical instruction),
+// all image references on that line are dropped from the output.
+//
+// Usage examples:
+//
+//	# Dockerfile
+//	FROM nginx:latest  # oci-image-detector:ignore
+//
+//	# Go / any text file
+//	// "localhost:5000/image:v1" -> "localhost:5000/image"  // oci-image-detector:ignore
+//
+//	# Terraform HCL
+//	image = "localhost:5000/example:v1"  # oci-image-detector:ignore
+const IgnoreAnnotation = "oci-image-detector:ignore"
+
+// IsIgnoredLine reports whether line carries the inline suppression annotation.
+func IsIgnoredLine(line string) bool {
+	return strings.Contains(line, IgnoreAnnotation)
+}
+
 // containsTemplate reports whether s contains a known template placeholder
 // that cannot be resolved at scan time. Each check is annotated with the
 // template syntax it targets.

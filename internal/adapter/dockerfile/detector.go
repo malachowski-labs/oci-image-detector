@@ -75,6 +75,9 @@ func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, er
 	var findings []domain.Finding
 
 	for _, in := range instrs {
+		if imageref.IsIgnoredLine(in.text) {
+			continue
+		}
 		fields := strings.Fields(in.text)
 		if len(fields) == 0 {
 			continue

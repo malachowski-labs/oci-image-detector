@@ -73,6 +73,10 @@ func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, er
 		lineNum++
 		line := scanner.Text()
 
+		if imageref.IsIgnoredLine(line) {
+			continue
+		}
+
 		for _, match := range imageref.Candidates(line) {
 			ref := imageref.Parse(match)
 			if !imageref.LooksLikeImage(ref) {

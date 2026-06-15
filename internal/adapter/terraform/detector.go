@@ -195,6 +195,10 @@ func scanTFFile(filename string, content []byte, vars map[string]string) []domai
 	for lineIdx, line := range lines {
 		lineNum := uint(lineIdx + 1)
 
+		if imageref.IsIgnoredLine(line) {
+			continue
+		}
+
 		// Resolve ${var.name} interpolations so the filter sees concrete values.
 		resolved := varInterpolRe.ReplaceAllStringFunc(line, func(match string) string {
 			sub := varInterpolRe.FindStringSubmatch(match)

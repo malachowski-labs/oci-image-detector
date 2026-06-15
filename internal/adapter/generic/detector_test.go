@@ -131,6 +131,19 @@ func TestDetector_Detect(t *testing.T) {
 			content:  `image: gcr.io/myproj/redis:7`,
 			wantRaws: []string{"gcr.io/myproj/redis:7"},
 		},
+		{
+			// Issue #40: inline oci-image-detector:ignore suppresses the line.
+			name:     "ignore annotation suppresses finding",
+			content:  `// "localhost:5000/image:v1" -> "localhost:5000/image"  // oci-image-detector:ignore`,
+			wantRaws: nil,
+		},
+		{
+			// Issue #40: annotation on one line does not suppress other lines.
+			name: "ignore annotation is line-scoped",
+			content: "ghcr.io/org/app:v1  # oci-image-detector:ignore\n" +
+				"ghcr.io/org/other:v2\n",
+			wantRaws: []string{"ghcr.io/org/other:v2"},
+		},
 	}
 
 	for _, tc := range tests {

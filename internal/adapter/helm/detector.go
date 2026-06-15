@@ -135,6 +135,17 @@ func isImageParent(key string) bool {
 	return false
 }
 
+// mapValueIgnored reports whether the value node for key in a MappingNode
+// carries the inline suppression annotation in its YAML line comment.
+func mapValueIgnored(node *yaml.Node, key string) bool {
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return strings.Contains(node.Content[i+1].LineComment, imageref.IgnoreAnnotation)
+		}
+	}
+	return false
+}
+
 // imageFinding extracts a finding from a mapping node already known to sit in
 // image position. ok=false drops the candidate entirely; callers fall back to
 // recursing into the mapping's children.
@@ -166,6 +177,9 @@ func isImageParent(key string) bool {
 func imageFinding(node *yaml.Node, filePath string) (domain.Finding, bool) {
 	repo, repoLine := mapValue(node, "repository")
 	if repo == "" || strings.Contains(repo, "://") {
+		return domain.Finding{}, false
+	}
+	if mapValueIgnored(node, "repository") {
 		return domain.Finding{}, false
 	}
 	registry, _ := mapValue(node, "registry")

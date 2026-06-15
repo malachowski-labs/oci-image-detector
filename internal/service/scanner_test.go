@@ -307,6 +307,43 @@ func TestScanFS_resultsSorted(t *testing.T) {
 	}
 }
 
+func TestScanFS_excludeImages(t *testing.T) {
+	fsys := fstest.MapFS{
+		"a.txt": {Data: []byte("ghcr.io/org/keep:v1\nlocalhost:5000/noise:v1\n")},
+	}
+	det := &stubDetector{
+		name:   "generic",
+		suffix: ".txt",
+		results: []domain.Finding{
+			{Ref: ref("ghcr.io/org/keep:v1"), Line: 1},
+			{Ref: ref("localhost:5000/noise:v1"), Line: 2},
+		},
+	}
+	findings, err := newService([]port.Detector{det}, nil).ScanFS(
+		context.Background(), fsys,
+		port.ScanOptions{ExcludeImages: []string{"localhost:5000/**"}},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("got %d findings, want 1: %v", len(findings), findings)
+	}
+	if findings[0].Ref.Raw != "ghcr.io/org/keep:v1" {
+		t.Errorf("unexpected finding: %q", findings[0].Ref.Raw)
+	}
+}
+
+func TestScanFS_excludeImages_invalidPattern(t *testing.T) {
+	svc := newService(nil, nil)
+	_, err := svc.ScanFS(context.Background(), fstest.MapFS{}, port.ScanOptions{
+		ExcludeImages: []string{"[invalid"},
+	})
+	if err == nil {
+		t.Error("expected error for invalid exclude-images pattern, got nil")
+	}
+}
+
 func TestScanFS_contextCancellation(t *testing.T) {
 	fsys := fstest.MapFS{
 		"a.txt": {Data: []byte("a")},

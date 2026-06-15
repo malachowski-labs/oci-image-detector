@@ -23,6 +23,11 @@ inputs:
     required: false
     default: ''
 
+  exclude-images:
+    description: Newline-separated doublestar glob patterns to exclude findings by image reference (e.g. "localhost:5000/**\n*.example.com/**").
+    required: false
+    default: ''
+
   allow-empty:
     description: Exit 0 when no image references are found (default "false").
     required: false
@@ -51,9 +56,10 @@ runs:
       env:
         INPUT_VERSION:     ${{ inputs.version }}
         INPUT_DIRECTORY:   ${{ inputs.directory }}
-        INPUT_EXCLUDE:     ${{ inputs.exclude }}
-        INPUT_ALLOW_EMPTY: ${{ inputs.allow-empty }}
-        INPUT_VERBOSE:     ${{ inputs.verbose }}
+        INPUT_EXCLUDE:        ${{ inputs.exclude }}
+        INPUT_EXCLUDE_IMAGES: ${{ inputs.exclude-images }}
+        INPUT_ALLOW_EMPTY:    ${{ inputs.allow-empty }}
+        INPUT_VERBOSE:        ${{ inputs.verbose }}
       run: |
         if [[ "$INPUT_DIRECTORY" = /* ]]; then
           echo "::error::'directory' must be a relative path (got: '$INPUT_DIRECTORY')"
@@ -76,6 +82,11 @@ runs:
           [[ -z "$pattern" ]] && continue
           ARGS+=(--exclude "$pattern")
         done <<< "$INPUT_EXCLUDE"
+
+        while IFS= read -r pattern; do
+          [[ -z "$pattern" ]] && continue
+          ARGS+=(--exclude-images "$pattern")
+        done <<< "$INPUT_EXCLUDE_IMAGES"
 
         [[ "$INPUT_ALLOW_EMPTY" == "true" ]] && ARGS+=(--allow-empty)
         [[ "$INPUT_VERBOSE"     == "true" ]] && ARGS+=(--verbose)
