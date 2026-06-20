@@ -37,7 +37,7 @@ jobs:
     name: Basic scan — JSON schema and findings-count contract
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Run action
         id: scan
@@ -131,7 +131,7 @@ jobs:
     name: Exclude pattern — fewer findings, no excluded file in output
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Full scan (no exclude)
         id: full
@@ -183,7 +183,7 @@ jobs:
     name: Multi-pattern exclude — newline-separated patterns all applied
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Scan with two patterns (Dockerfile + action.yml)
         id: scan
@@ -216,7 +216,7 @@ jobs:
     name: allow-empty — zero findings, valid empty array in report
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Create empty scan target
         run: mkdir -p scan-empty
@@ -254,7 +254,7 @@ jobs:
     name: Empty directory exits non-zero without allow-empty
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Create empty scan target
         run: mkdir -p scan-empty
@@ -280,7 +280,7 @@ jobs:
     name: Absolute directory path is rejected
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Expect failure on absolute path
         id: scan
