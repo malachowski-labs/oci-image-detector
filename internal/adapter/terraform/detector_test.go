@@ -6,6 +6,7 @@ import (
 	"testing/fstest"
 
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/terraform"
+	"github.com/malachowski-labs/oci-image-detector/internal/domain"
 )
 
 func TestDetector_MatchDir(t *testing.T) {
@@ -261,6 +262,183 @@ variable "base-image" {
 	}
 	if !found {
 		t.Errorf("expected finding for hyphenated var, got: %v", findings)
+	}
+}
+
+// hasRaw reports whether any finding has the given Raw image reference.
+func hasRaw(findings []domain.Finding, raw string) bool {
+	for _, f := range findings {
+		if f.Ref.Raw == raw {
+			return true
+		}
+	}
+	return false
+}
+
+// TestDetector_DetectDir_localsResolution verifies that a local built from
+// multiple variables is resolved (local.* was not handled at all before the
+// HCL rewrite).
+func TestDetector_DetectDir_localsResolution(t *testing.T) {
+	dir := fstest.MapFS{
+		"variables.tf": {Data: []byte(`
+variable "registry" { default = "ghcr.io" }
+variable "tag"      { default = "v1.0.0" }
+`)},
+		"main.tf": {Data: []byte(`
+locals {
+  image = "${var.registry}/org/app:${var.tag}"
+}
+resource "aws_ecs_task_definition" "app" {
+  image = local.image
+}
+`)},
+	}
+	findings, err := terraform.New().DetectDir(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasRaw(findings, "ghcr.io/org/app:v1.0.0") {
+		t.Errorf("expected resolved local ghcr.io/org/app:v1.0.0, got: %v", findings)
+	}
+}
+
+// TestDetector_DetectDir_chainedLocals verifies fixpoint evaluation of a local
+// that references another local.
+func TestDetector_DetectDir_chainedLocals(t *testing.T) {
+	dir := fstest.MapFS{
+		"main.tf": {Data: []byte(`
+variable "tag" { default = "2.1.0" }
+locals {
+  repo  = "ghcr.io/org/app"
+  image = "${local.repo}:${var.tag}"
+}
+resource "x" "y" {
+  image = local.image
+}
+`)},
+	}
+	findings, err := terraform.New().DetectDir(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasRaw(findings, "ghcr.io/org/app:2.1.0") {
+		t.Errorf("expected chained-local ghcr.io/org/app:2.1.0, got: %v", findings)
+	}
+}
+
+// TestDetector_DetectDir_jsonencode verifies that an image nested inside an ECS
+// container_definitions jsonencode([...]) blob is found — jsonencode evaluates
+// to a concrete JSON string the candidate filter can scan.
+func TestDetector_DetectDir_jsonencode(t *testing.T) {
+	dir := fstest.MapFS{
+		"main.tf": {Data: []byte(`
+variable "tag" { default = "1.25" }
+resource "aws_ecs_task_definition" "app" {
+  container_definitions = jsonencode([{
+    name  = "app"
+    image = "ghcr.io/org/app:${var.tag}"
+  }])
+}
+`)},
+	}
+	findings, err := terraform.New().DetectDir(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasRaw(findings, "ghcr.io/org/app:1.25") {
+		t.Errorf("expected jsonencode image ghcr.io/org/app:1.25, got: %v", findings)
+	}
+}
+
+// TestDetector_DetectDir_functionCall verifies a supported stdlib function
+// (format) is evaluated when assembling an image reference.
+func TestDetector_DetectDir_functionCall(t *testing.T) {
+	dir := fstest.MapFS{
+		"main.tf": {Data: []byte(`
+variable "tag" { default = "3.0.0" }
+resource "x" "y" {
+  image = format("ghcr.io/org/app:%s", var.tag)
+}
+`)},
+	}
+	findings, err := terraform.New().DetectDir(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasRaw(findings, "ghcr.io/org/app:3.0.0") {
+		t.Errorf("expected format() image ghcr.io/org/app:3.0.0, got: %v", findings)
+	}
+}
+
+// TestDetector_DetectDir_tfvarsOnlyNoDefault verifies a variable with no default
+// is resolved purely from a .tfvars assignment.
+func TestDetector_DetectDir_tfvarsOnlyNoDefault(t *testing.T) {
+	dir := fstest.MapFS{
+		"variables.tf":     {Data: []byte(`variable "image_uri" {}`)},
+		"terraform.tfvars": {Data: []byte(`image_uri = "ghcr.io/org/app:3.3.3"`)},
+		"main.tf":          {Data: []byte(`image = var.image_uri`)},
+	}
+	findings, err := terraform.New().DetectDir(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasRaw(findings, "ghcr.io/org/app:3.3.3") {
+		t.Errorf("expected tfvars-only ghcr.io/org/app:3.3.3, got: %v", findings)
+	}
+}
+
+// TestDetector_DetectDir_unresolvedResourceRefSkipped documents the precision
+// contract under HCL: an image sourced from a resource attribute cannot be
+// resolved statically and must not be reported.
+func TestDetector_DetectDir_unresolvedResourceRefSkipped(t *testing.T) {
+	dir := fstest.MapFS{
+		"main.tf": {Data: []byte(`
+resource "aws_ecs_task_definition" "app" {
+  image = aws_ecr_repository.app.repository_url
+}
+`)},
+	}
+	findings, err := terraform.New().DetectDir(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 0 {
+		t.Errorf("expected no findings for unresolved resource ref, got: %v", findings)
+	}
+}
+
+// TestDetector_DetectDir_suppressAnnotation verifies that an attribute whose
+// source line carries the inline suppress annotation is not reported.
+func TestDetector_DetectDir_suppressAnnotation(t *testing.T) {
+	dir := fstest.MapFS{
+		"main.tf": {Data: []byte("resource \"x\" \"y\" {\n" +
+			"  image = \"ghcr.io/org/app:1.0\" # oci-image-detector:ignore\n" +
+			"}\n")},
+	}
+	findings, err := terraform.New().DetectDir(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 0 {
+		t.Errorf("expected no findings for suppressed line, got: %v", findings)
+	}
+}
+
+// TestDetector_DetectDir_lineNumbers verifies findings carry the real source
+// line of the attribute (the HCL parser exposes accurate ranges).
+func TestDetector_DetectDir_lineNumbers(t *testing.T) {
+	dir := fstest.MapFS{
+		"main.tf": {Data: []byte("resource \"x\" \"y\" {\n  image = \"ghcr.io/org/app:1.0\"\n}\n")},
+	}
+	findings, err := terraform.New().DetectDir(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
+	}
+	if findings[0].Line != 2 {
+		t.Errorf("Line = %d, want 2", findings[0].Line)
 	}
 }
 
