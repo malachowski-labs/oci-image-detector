@@ -19,6 +19,7 @@ import (
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/helm"
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/reporter"
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/terraform"
+	"github.com/malachowski-labs/oci-image-detector/internal/domain"
 	"github.com/malachowski-labs/oci-image-detector/internal/port"
 	"github.com/malachowski-labs/oci-image-detector/internal/service"
 )
@@ -101,6 +102,8 @@ Exit codes:
 	f.BoolVar(&opts.allowEmpty, "allow-empty", false,
 		"Exit 0 when no image references are found (default: exit 1)")
 
+	cmd.AddCommand(newPlanCmd())
+
 	return cmd
 }
 
@@ -136,10 +139,18 @@ func run(ctx context.Context, opts options) error {
 		return fmt.Errorf("scan: %w", err)
 	}
 
+	return report(findings, opts.outputFile, opts.allowEmpty, log)
+}
+
+// report writes findings to stdout and, when outputFile is set, also as JSON.
+// It returns ErrNoFindings when there are no findings and allowEmpty is false.
+// Shared by the root scan command and the plan subcommand so both surface
+// results identically.
+func report(findings []domain.Finding, outputFile string, allowEmpty bool, log *zap.Logger) error {
 	// Always report to stdout; optionally also write JSON.
 	reporters := []port.Reporter{reporter.NewStdout(os.Stdout)}
-	if opts.outputFile != "" {
-		reporters = append(reporters, reporter.NewJSONFile(opts.outputFile))
+	if outputFile != "" {
+		reporters = append(reporters, reporter.NewJSONFile(outputFile))
 	}
 
 	for _, r := range reporters {
@@ -148,7 +159,7 @@ func run(ctx context.Context, opts options) error {
 		}
 	}
 
-	if len(findings) == 0 && !opts.allowEmpty {
+	if len(findings) == 0 && !allowEmpty {
 		return ErrNoFindings
 	}
 
