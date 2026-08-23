@@ -30,4 +30,4 @@ jobs:
         with:
           # Pin to a specific version so CI is reproducible and Renovate bumps
           # it intentionally rather than a new release breaking checks silently.
-          version: v2.13.0
+          version: v2.13.1
