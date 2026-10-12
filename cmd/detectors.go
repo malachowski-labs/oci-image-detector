@@ -10,5 +10,6 @@ import (
 	_ "github.com/malachowski-labs/oci-image-detector/internal/adapter/generic"
 	_ "github.com/malachowski-labs/oci-image-detector/internal/adapter/githubactions"
 	_ "github.com/malachowski-labs/oci-image-detector/internal/adapter/helm"
+	_ "github.com/malachowski-labs/oci-image-detector/internal/adapter/kubernetes"
 	_ "github.com/malachowski-labs/oci-image-detector/internal/adapter/terraform"
 )

@@ -7,6 +7,7 @@ A production-ready CLI tool and GitHub Action that **recursively scans a directo
 | `Dockerfile` / `Containerfile` | `FROM` instructions (incl. `--platform`, `AS` aliases, `scratch`) |
 | Helm `values.yaml` / `values-*.yaml` | `registry` + `repository` + `tag` fields |
 | Docker Compose `compose.yaml` / `docker-compose.yaml` (incl. `.yml` and `compose.<suffix>.yaml` overrides) | `services.<name>.image`, incl. images shared through YAML anchors and merge keys |
+| Kubernetes manifests: any `*.yaml` / `*.yml` with an `apiVersion` and `kind` | `image` of every `containers` / `initContainers` / `ephemeralContainers` entry, incl. short forms; fully-qualified references in any other value |
 | Terraform `*.tf` | `image` / `container` / `source` variable defaults, locals, and resource arguments |
 | GitHub Actions `*.yml` / `*.yaml` under `.github/workflows/` and `.github/actions/` | `uses: docker://image:tag` steps, `container.image`, `services.<name>.image` |
 | Any text file | Bare `<registry>/<image>:<tag>`, `<image>:<tag>`, and `@sha256:` references |
@@ -237,6 +238,7 @@ Add `oci-image-detector:ignore` in a comment next to the image reference. Where 
 | Helm values | YAML comment on any line of the image block (`registry:`, `repository:`, `tag:` or `digest:`) |
 | GitHub Actions | YAML comment on the `uses:` / `image:` / `container:` value itself |
 | Docker Compose | YAML comment on the `image:` value itself |
+| Kubernetes | YAML comment on the value holding the reference, or on the reference's own line inside a block scalar |
 | Dockerfile | Not supported — use [`--exclude-images`](#--exclude-images--exclude-images-input) |
 
 ```go
@@ -292,7 +294,7 @@ oci-image-detector \
 
 ## Disabling detectors
 
-Each detector can be turned off by name: `compose`, `dockerfile`, `generic`, `githubactions`, `helm`, `terraform`. An unknown name is an error, so a typo cannot leave a detector on by accident.
+Each detector can be turned off by name: `compose`, `dockerfile`, `generic`, `githubactions`, `helm`, `kubernetes`, `terraform`. An unknown name is an error, so a typo cannot leave a detector on by accident.
 
 The flag and the action input are available in releases after `v1.4.0`.
 
@@ -320,7 +322,7 @@ Disabling a detector does not exclude its files. With `dockerfile` off, a Docker
 
 Detectors are plugins compiled into the binary. To add one for a format the built-in set does not cover, build your own binary: write a detector package, register it from `init`, and reuse this project's command.
 
-A file-level detector implements [`port.Detector`](pkg/port/detector.go) and declares a tier — `port.TierSpecialist` for a detector that claims one file format, `port.TierFallback` for one that takes whatever no specialist claimed. Specialists are always consulted before fallbacks, and the first match wins. A detector that needs a whole directory at once implements `port.DirectoryAwareDetector` and registers with `registry.MustRegisterDir`. Its `Owns` method names the files of its format: those are never handed to a file-level detector, while the other files of the directory and its subdirectories are scanned as usual.
+A file-level detector implements [`port.Detector`](pkg/port/detector.go) and declares a tier — `port.TierSpecialist` for a detector that claims one file format, `port.TierFallback` for one that takes whatever no specialist claimed. Specialists are always consulted before fallbacks, and the first match wins. A format that cannot be recognised by path also implements `port.ContentMatcher`; such a detector is consulted after the specialists that claim by path, and only claims files whose content it accepts. A detector that needs a whole directory at once implements `port.DirectoryAwareDetector` and registers with `registry.MustRegisterDir`. Its `Owns` method names the files of its format: those are never handed to a file-level detector, while the other files of the directory and its subdirectories are scanned as usual.
 
 ```go
 package nomad
@@ -372,7 +374,7 @@ import (
 func main() { cmd.Execute("custom") }
 ```
 
-Detector names must be unique across the binary, including the built-in ones (`compose`, `dockerfile`, `generic`, `githubactions`, `helm`, `terraform`); a duplicate name stops the binary at start-up.
+Detector names must be unique across the binary, including the built-in ones (`compose`, `dockerfile`, `generic`, `githubactions`, `helm`, `kubernetes`, `terraform`); a duplicate name stops the binary at start-up.
 
 Two helper packages are available to detectors:
 
