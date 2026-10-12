@@ -111,6 +111,7 @@ spike above and can be revisited independently:
   `github.com/distribution/reference` — it would be a second grammar for a job
   already covered.
 - **Terraform (HCL)**: the only remaining specialist whose accuracy genuinely
-  benefits from a parser (`github.com/hashicorp/hcl/v2`). Deferred; the payoff is
-  the least certain and the dependency is not free. Decide separately if/when
-  Terraform precision becomes a priority.
+  benefits from a parser (`github.com/hashicorp/hcl/v2`). Deferred at the time
+  of this ADR and decided since: the Terraform detector parses and evaluates
+  with `hcl/v2`. See the package documentation of
+  `internal/adapter/terraform`.

@@ -65,6 +65,10 @@ func TestScalar(t *testing.T) {
 			content: "key: nginx:1.25",
 		},
 		{
+			name:    "source file with a line number is not a reference",
+			content: "key: panic at github.com/org/repo/cmd/main.go:47",
+		},
+		{
 			name:    "ignore annotation on the value",
 			content: "key: ghcr.io/org/app:v1  # oci-image-detector:ignore",
 		},

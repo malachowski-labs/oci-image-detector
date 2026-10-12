@@ -4,12 +4,12 @@ A production-ready CLI tool and GitHub Action that **recursively scans a directo
 
 | File type | Pattern |
 |---|---|
-| `Dockerfile` / `Containerfile` | `FROM` instructions (incl. `--platform`, `AS` aliases, `scratch`) |
+| `Dockerfile` / `Containerfile` | `FROM` instructions (incl. `--platform`, `AS` aliases, `scratch`, `ARG` defaults) and `COPY --from=<image>`, incl. short forms; fully-qualified references in any other instruction |
 | Helm `values.yaml` and per-environment variants (`values-*.yaml`, `values.*.yaml`, `*-values.yaml`, `*.values.yaml`, incl. `.yml`) | `registry` + `repository` + `tag` / `digest` blocks and pinned strings (`image: nginx:1.25`) under image-shaped keys, incl. short forms; fully-qualified references in any other value |
-| Docker Compose `compose.yaml` / `docker-compose.yaml` (incl. `.yml` and `compose.<suffix>.yaml` overrides) | `services.<name>.image`, incl. images shared through YAML anchors and merge keys |
+| Docker Compose `compose.yaml` / `docker-compose.yaml` (incl. `.yml` and `compose.<suffix>.yaml` overrides) | `services.<name>.image` and `docker-image://` additional build contexts, incl. short forms and images shared through YAML anchors and merge keys; fully-qualified references in any other value |
 | Kubernetes manifests: any `*.yaml` / `*.yml` with an `apiVersion` and `kind` | `image` of every `containers` / `initContainers` / `ephemeralContainers` entry, incl. short forms; fully-qualified references in any other value |
 | Terraform `*.tf` | `image` / `container` / `source` variable defaults, locals, and resource arguments |
-| GitHub Actions `*.yml` / `*.yaml` under `.github/workflows/` and `.github/actions/` | `uses: docker://image:tag` steps, `container.image`, `services.<name>.image` |
+| GitHub Actions `*.yml` / `*.yaml` under `.github/workflows/` and `.github/actions/` | `uses: docker://image:tag` steps, `container.image`, `services.<name>.image`, `runs.image: docker://image:tag` of a container action, incl. short forms; fully-qualified references in any other value |
 | Any text file | Bare `<registry>/<image>:<tag>`, `<image>:<tag>`, and `@sha256:` references |
 
 ---
@@ -236,8 +236,8 @@ Add `oci-image-detector:ignore` in a comment next to the image reference. Where 
 | Any text file | Anywhere on the line holding the reference |
 | Terraform | On the first line of the attribute, even when the literal sits on a later line of a multi-line expression |
 | Helm values | YAML comment on any line of the image block (`registry:`, `repository:`, `tag:` or `digest:`), or on the value holding the reference |
-| GitHub Actions | YAML comment on the `uses:` / `image:` / `container:` value itself |
-| Docker Compose | YAML comment on the `image:` value itself |
+| GitHub Actions | YAML comment on the value holding the reference, or on the reference's own line inside a block scalar |
+| Docker Compose | YAML comment on the value holding the reference, or on the reference's own line inside a block scalar |
 | Kubernetes | YAML comment on the value holding the reference, or on the reference's own line inside a block scalar |
 | Dockerfile | Not supported — use [`--exclude-images`](#--exclude-images--exclude-images-input) |
 
@@ -378,7 +378,7 @@ Detector names must be unique across the binary, including the built-in ones (`c
 
 Two helper packages are available to detectors:
 
-- [`pkg/imageref`](pkg/imageref/parse.go) — `Parse` resolves a reference into registry, repository and tag or digest; `Candidates` is the precision filter for scanning unstructured text. `ContainsTemplate` tells an unresolved placeholder (`${TAG}`, `{{ .Values.tag }}`) from a string that is simply not a reference.
+- [`pkg/imageref`](pkg/imageref/parse.go) — `Parse` resolves a reference into registry, repository and tag or digest; `Candidates` is the precision filter for scanning unstructured text, and `IsSourceFile` drops the `file.go:47` look-alikes it lets through. `ContainsTemplate` tells an unresolved placeholder (`${TAG}`, `{{ .Values.tag }}`) from a string that is simply not a reference.
 - [`pkg/suppress`](pkg/suppress/annotation.go) — `IsIgnoredLine` recognises the [inline annotation](#inline-annotation), so a custom detector can honour it the same way the built-in ones do.
 
 ## Supported platforms
