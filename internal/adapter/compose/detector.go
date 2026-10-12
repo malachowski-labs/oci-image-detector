@@ -26,11 +26,8 @@ const mergeKey = "<<"
 // Detector implements port.Detector for Docker Compose files.
 type Detector struct{}
 
-// New returns a new Docker Compose Detector.
-func New() *Detector { return &Detector{} }
-
 // init makes the detector available to every binary that links this package.
-func init() { registry.MustRegister(New()) }
+func init() { registry.MustRegister(&Detector{}) }
 
 // Name implements port.Detector.
 func (d *Detector) Name() string { return string(Strategy) }

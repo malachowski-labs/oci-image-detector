@@ -11,24 +11,16 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"reflect"
 	"slices"
 
 	"github.com/malachowski-labs/oci-image-detector/pkg/port"
 )
-
-// ErrNilDetector is returned when a nil detector is registered.
-var ErrNilDetector = errors.New("registry: detector is nil")
 
 // ErrEmptyName is returned when a detector reports an empty Name.
 var ErrEmptyName = errors.New("registry: detector name is empty")
 
 // ErrDuplicateName is returned when two detectors report the same Name.
 var ErrDuplicateName = errors.New("registry: duplicate detector name")
-
-// ErrUnknownTier is returned when a detector reports a Tier the registry does
-// not know how to order.
-var ErrUnknownTier = errors.New("registry: unknown detector tier")
 
 // ErrUnknownDetector is returned when a detector is referred to by a name that
 // was never registered.
@@ -74,16 +66,9 @@ func MustRegisterDir(d port.DirectoryAwareDetector) {
 }
 
 // Register adds a file-level detector.
-// It rejects a nil detector, an empty or already registered name, and an
-// unknown tier, so a misconfigured detector fails at start-up rather than
-// silently shadowing another one mid-scan.
+// It rejects an empty or already registered name, so a misconfigured detector
+// fails at start-up rather than silently shadowing another one mid-scan.
 func (r *Registry) Register(d port.Detector) error {
-	if isNil(d) {
-		return ErrNilDetector
-	}
-	if t := d.Tier(); !t.Valid() {
-		return fmt.Errorf("%w: %q declares %s", ErrUnknownTier, d.Name(), t)
-	}
 	if err := r.claimName(d.Name()); err != nil {
 		return err
 	}
@@ -95,9 +80,6 @@ func (r *Registry) Register(d port.Detector) error {
 // Names are unique across both kinds of detector because a name becomes
 // Finding.Strategy regardless of which kind produced the finding.
 func (r *Registry) RegisterDir(d port.DirectoryAwareDetector) error {
-	if isNil(d) {
-		return ErrNilDetector
-	}
 	if err := r.claimName(d.Name()); err != nil {
 		return err
 	}
@@ -162,20 +144,6 @@ func (r *Registry) Without(names ...string) (*Registry, error) {
 		}
 	}
 	return out, nil
-}
-
-// isNil reports whether d is a nil interface or an interface holding a nil
-// value, such as a nil *Detector. A plain d == nil misses the latter.
-func isNil(d any) bool {
-	if d == nil {
-		return true
-	}
-	switch v := reflect.ValueOf(d); v.Kind() {
-	case reflect.Pointer, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan:
-		return v.IsNil()
-	default:
-		return false
-	}
 }
 
 // claimName reserves name, failing when it is empty or already taken.

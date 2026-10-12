@@ -25,11 +25,8 @@ const maxScanTokenSize = 1 << 20 // 1 MiB
 // Detector implements port.Detector as a regex-based fallback.
 type Detector struct{}
 
-// New returns a new Generic Detector.
-func New() *Detector { return &Detector{} }
-
 // init makes the detector available to every binary that links this package.
-func init() { registry.MustRegister(New()) }
+func init() { registry.MustRegister(&Detector{}) }
 
 // Name implements port.Detector.
 func (d *Detector) Name() string { return string(Strategy) }

@@ -74,7 +74,7 @@ func Candidates(s string) []string {
 func Parse(raw string) domain.ImageRef {
 	// Reject strings containing template placeholders — they cannot be resolved
 	// at scan time and must be kept as raw-only findings.
-	if containsTemplate(raw) {
+	if ContainsTemplate(raw) {
 		return domain.NewImageRef(raw)
 	}
 
@@ -99,13 +99,7 @@ func Parse(raw string) domain.ImageRef {
 		tag = tagFromTaggedDigest(raw)
 	}
 
-	parsed, err := domain.NewParsedImageRef(raw, registry, repository, tag, digest)
-	if err != nil {
-		// Registry or repository were empty after parsing — return raw only.
-		return domain.NewImageRef(raw)
-	}
-
-	return parsed
+	return domain.NewParsedImageRef(raw, registry, repository, tag, digest)
 }
 
 // tagFromTaggedDigest extracts the tag from a "name:tag@digest" reference, or
@@ -124,10 +118,11 @@ func tagFromTaggedDigest(raw string) string {
 	return ""
 }
 
-// containsTemplate reports whether s contains a known template placeholder
-// that cannot be resolved at scan time. Each check is annotated with the
-// template syntax it targets.
-func containsTemplate(s string) bool {
+// ContainsTemplate reports whether s contains a known template placeholder
+// that cannot be resolved at scan time. Parse returns such a string unparsed;
+// detectors use this to tell that case from a string that is not a reference.
+// Each check is annotated with the template syntax it targets.
+func ContainsTemplate(s string) bool {
 	return strings.Contains(s, "$") || // shell: $VAR, ${VAR}; Terraform: ${var.x}; K8s: $(VAR)
 		strings.Contains(s, "{{") || // Go/Helm templates: {{ .Values.tag }}
 		strings.Contains(s, "%(") || // Python %-format strings: %(key)s

@@ -17,29 +17,12 @@ func TestNewImageRef(t *testing.T) {
 }
 
 func TestNewParsedImageRef_valid(t *testing.T) {
-	ref, err := domain.NewParsedImageRef("nginx:1.25", "index.docker.io", "library/nginx", "1.25", "")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	ref := domain.NewParsedImageRef("nginx:1.25", "index.docker.io", "library/nginx", "1.25", "")
 	if !ref.Parsed {
 		t.Error("Parsed should be true")
 	}
 	if ref.Registry != "index.docker.io" {
 		t.Errorf("Registry = %q, want %q", ref.Registry, "index.docker.io")
-	}
-}
-
-func TestNewParsedImageRef_emptyRegistry(t *testing.T) {
-	_, err := domain.NewParsedImageRef("nginx", "", "library/nginx", "latest", "")
-	if err == nil {
-		t.Error("expected error for empty registry, got nil")
-	}
-}
-
-func TestNewParsedImageRef_emptyRepository(t *testing.T) {
-	_, err := domain.NewParsedImageRef("nginx", "index.docker.io", "", "latest", "")
-	if err == nil {
-		t.Error("expected error for empty repository, got nil")
 	}
 }
 
@@ -74,22 +57,22 @@ func TestImageRef_Canonical(t *testing.T) {
 		},
 		{
 			name: "tag reference",
-			ref:  mustParsed(t, "nginx:1.25", "index.docker.io", "library/nginx", "1.25", ""),
+			ref:  domain.NewParsedImageRef("nginx:1.25", "index.docker.io", "library/nginx", "1.25", ""),
 			want: "index.docker.io/library/nginx:1.25",
 		},
 		{
 			name: "implicit latest tag",
-			ref:  mustParsed(t, "nginx", "index.docker.io", "library/nginx", "", ""),
+			ref:  domain.NewParsedImageRef("nginx", "index.docker.io", "library/nginx", "", ""),
 			want: "index.docker.io/library/nginx:latest",
 		},
 		{
 			name: "digest reference",
-			ref:  mustParsed(t, "ghcr.io/org/app@sha256:abc123", "ghcr.io", "org/app", "", "sha256:abc123"),
+			ref:  domain.NewParsedImageRef("ghcr.io/org/app@sha256:abc123", "ghcr.io", "org/app", "", "sha256:abc123"),
 			want: "ghcr.io/org/app@sha256:abc123",
 		},
 		{
 			name: "digest takes precedence over tag",
-			ref:  mustParsed(t, "ghcr.io/org/app:v1@sha256:abc123", "ghcr.io", "org/app", "v1", "sha256:abc123"),
+			ref:  domain.NewParsedImageRef("ghcr.io/org/app:v1@sha256:abc123", "ghcr.io", "org/app", "v1", "sha256:abc123"),
 			want: "ghcr.io/org/app@sha256:abc123",
 		},
 	}
@@ -101,15 +84,4 @@ func TestImageRef_Canonical(t *testing.T) {
 			}
 		})
 	}
-}
-
-// mustParsed is a test helper that calls NewParsedImageRef and fails the test
-// immediately on error, keeping table-driven test cases concise.
-func mustParsed(t *testing.T, raw, registry, repo, tag, digest string) domain.ImageRef {
-	t.Helper()
-	ref, err := domain.NewParsedImageRef(raw, registry, repo, tag, digest)
-	if err != nil {
-		t.Fatalf("NewParsedImageRef(%q): %v", raw, err)
-	}
-	return ref
 }

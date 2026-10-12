@@ -38,12 +38,7 @@ func TestJSONFile_emptyFindings(t *testing.T) {
 }
 
 func TestJSONFile_parsedFinding(t *testing.T) {
-	ref, err := domain.NewParsedImageRef(
-		"ghcr.io/org/app:v1.0.0", "ghcr.io", "org/app", "v1.0.0", "",
-	)
-	if err != nil {
-		t.Fatalf("NewParsedImageRef: %v", err)
-	}
+	ref := domain.NewParsedImageRef("ghcr.io/org/app:v1.0.0", "ghcr.io", "org/app", "v1.0.0", "")
 	findings := []domain.Finding{
 		{
 			Ref:      ref,

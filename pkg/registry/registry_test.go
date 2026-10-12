@@ -119,11 +119,8 @@ func TestRegister_rejectsInvalidDetectors(t *testing.T) {
 		det  port.Detector
 		want error
 	}{
-		{name: "nil", det: nil, want: registry.ErrNilDetector},
-		{name: "typed nil", det: (*stubDetector)(nil), want: registry.ErrNilDetector},
 		{name: "empty name", det: specialist(""), want: registry.ErrEmptyName},
 		{name: "duplicate name", det: specialist("taken"), want: registry.ErrDuplicateName},
-		{name: "unknown tier", det: &stubDetector{name: "odd", tier: port.Tier(99)}, want: registry.ErrUnknownTier},
 	}
 
 	for _, tt := range tests {
@@ -149,8 +146,6 @@ func TestRegisterDir_rejectsInvalidDetectors(t *testing.T) {
 		det  port.DirectoryAwareDetector
 		want error
 	}{
-		{name: "nil", det: nil, want: registry.ErrNilDetector},
-		{name: "typed nil", det: (*stubDirDetector)(nil), want: registry.ErrNilDetector},
 		{name: "empty name", det: &stubDirDetector{}, want: registry.ErrEmptyName},
 		// Names are shared with file-level detectors: both end up as Finding.Strategy.
 		{name: "name taken by file detector", det: &stubDirDetector{name: "taken"}, want: registry.ErrDuplicateName},

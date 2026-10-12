@@ -7,7 +7,7 @@ import (
 )
 
 func TestDetector_Match(t *testing.T) {
-	det := dockerfile.New()
+	det := &dockerfile.Detector{}
 	cases := []struct {
 		path string
 		want bool
@@ -30,7 +30,7 @@ func TestDetector_Match(t *testing.T) {
 }
 
 func TestDetector_Detect(t *testing.T) {
-	det := dockerfile.New()
+	det := &dockerfile.Detector{}
 
 	tests := []struct {
 		name      string

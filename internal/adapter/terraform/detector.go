@@ -27,11 +27,8 @@ const Strategy domain.Strategy = "terraform"
 // Detector implements port.DirectoryAwareDetector for Terraform directories.
 type Detector struct{}
 
-// New returns a new Terraform Detector.
-func New() *Detector { return &Detector{} }
-
 // init makes the detector available to every binary that links this package.
-func init() { registry.MustRegisterDir(New()) }
+func init() { registry.MustRegisterDir(&Detector{}) }
 
 // Name implements port.DirectoryAwareDetector.
 func (d *Detector) Name() string { return string(Strategy) }

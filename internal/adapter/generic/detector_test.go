@@ -8,7 +8,7 @@ import (
 )
 
 func TestDetector_Match(t *testing.T) {
-	det := generic.New()
+	det := &generic.Detector{}
 	cases := []struct {
 		path string
 		want bool
@@ -38,7 +38,7 @@ func TestDetector_Match(t *testing.T) {
 }
 
 func TestDetector_Detect(t *testing.T) {
-	det := generic.New()
+	det := &generic.Detector{}
 
 	tests := []struct {
 		name     string

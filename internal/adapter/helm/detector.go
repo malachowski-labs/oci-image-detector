@@ -23,11 +23,8 @@ const Strategy domain.Strategy = "helm"
 // Detector implements port.Detector for Helm values files.
 type Detector struct{}
 
-// New returns a new Helm Detector.
-func New() *Detector { return &Detector{} }
-
 // init makes the detector available to every binary that links this package.
-func init() { registry.MustRegister(New()) }
+func init() { registry.MustRegister(&Detector{}) }
 
 // Name implements port.Detector.
 func (d *Detector) Name() string { return string(Strategy) }
@@ -204,7 +201,7 @@ func imageFinding(node *yaml.Node, filePath string) (domain.Finding, bool) {
 	raw := buildRaw(host, repo, tag, digest)
 	ref := imageref.Parse(raw)
 
-	if !ref.Parsed && !containsTemplate(raw) {
+	if !ref.Parsed && !imageref.ContainsTemplate(raw) {
 		return domain.Finding{}, false
 	}
 
@@ -214,17 +211,6 @@ func imageFinding(node *yaml.Node, filePath string) (domain.Finding, bool) {
 		Line:     uint(repoLine),
 		Strategy: Strategy,
 	}, true
-}
-
-// containsTemplate reports whether s contains a known template placeholder
-// that could explain why imageref.Parse marked the ref unparsed. Mirrors the
-// list in imageref.containsTemplate; kept local to avoid widening that
-// package's API for a single caller.
-func containsTemplate(s string) bool {
-	return strings.Contains(s, "$") ||
-		strings.Contains(s, "{{") ||
-		strings.Contains(s, "%(") ||
-		strings.Contains(s, "#{")
 }
 
 // mapValue returns the string value and line number for key in a MappingNode.

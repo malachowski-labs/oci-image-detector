@@ -7,7 +7,7 @@ import (
 )
 
 func TestDetector_Match(t *testing.T) {
-	det := helm.New()
+	det := &helm.Detector{}
 	cases := []struct {
 		path string
 		want bool
@@ -31,7 +31,7 @@ func TestDetector_Match(t *testing.T) {
 }
 
 func TestDetector_Detect(t *testing.T) {
-	det := helm.New()
+	det := &helm.Detector{}
 
 	tests := []struct {
 		name     string

@@ -11,7 +11,7 @@ rules below add what the interfaces cannot express.
 
 ### Structure
 
-1. One package per file format. It exports `Strategy`, `Detector` and `New`,
+1. One package per file format. It exports `Strategy` and `Detector`,
    and registers itself from `init` with `registry.MustRegister` (or
    `MustRegisterDir`). Shipping it means adding one blank import to
    `cmd/detectors.go`.

@@ -21,11 +21,8 @@ const Strategy domain.Strategy = "githubactions"
 // Detector implements port.Detector for GitHub Actions workflow and action files.
 type Detector struct{}
 
-// New returns a new GitHub Actions Detector.
-func New() *Detector { return &Detector{} }
-
 // init makes the detector available to every binary that links this package.
-func init() { registry.MustRegister(New()) }
+func init() { registry.MustRegister(&Detector{}) }
 
 // Name implements port.Detector.
 func (d *Detector) Name() string { return string(Strategy) }

@@ -12,7 +12,7 @@ import (
 )
 
 func TestDetector_MatchDir(t *testing.T) {
-	det := terraform.New()
+	det := &terraform.Detector{}
 
 	withTF := []fs.DirEntry{
 		fakeDirEntry{name: "main.tf"},
@@ -39,7 +39,7 @@ func TestDetector_MatchDir(t *testing.T) {
 }
 
 func TestDetector_Owns(t *testing.T) {
-	det := terraform.New()
+	det := &terraform.Detector{}
 	cases := []struct {
 		path string
 		want bool
@@ -68,7 +68,7 @@ resource "aws_ecs_task_definition" "app" {
 }
 `)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestDetector_DetectDir_bareImageNotReported(t *testing.T) {
 	dir := fstest.MapFS{
 		"main.tf": {Data: []byte(`image = "nginx:1.25"`)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -114,7 +114,7 @@ resource "aws_ecs_task_definition" "app" {
 }
 `)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -146,7 +146,7 @@ variable "app_image" {
 `)},
 		"main.tf": {Data: []byte(`image = var.app_image`)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -171,7 +171,7 @@ variable "image_uri" {
 		"terraform.tfvars": {Data: []byte(`image_uri = "ghcr.io/org/app:1.25"`)},
 		"main.tf":          {Data: []byte(`image = var.image_uri`)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -195,7 +195,7 @@ variable "image_tag" {
 `)},
 		"main.tf": {Data: []byte(`image = "ghcr.io/org/app:${var.image_tag}"`)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestDetector_DetectDir_unresolvableVarNotReported(t *testing.T) {
 	dir := fstest.MapFS{
 		"main.tf": {Data: []byte(`image = "ghcr.io/org/app:${var.unknown_tag}"`)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -252,7 +252,7 @@ locals {
 }
 `)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -272,7 +272,7 @@ variable "base-image" {
 `)},
 		"main.tf": {Data: []byte(`image = var.base-image`)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -315,7 +315,7 @@ resource "aws_ecs_task_definition" "app" {
 }
 `)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -339,7 +339,7 @@ resource "x" "y" {
 }
 `)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -363,7 +363,7 @@ resource "aws_ecs_task_definition" "app" {
 }
 `)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -383,7 +383,7 @@ resource "x" "y" {
 }
 `)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -400,7 +400,7 @@ func TestDetector_DetectDir_tfvarsOnlyNoDefault(t *testing.T) {
 		"terraform.tfvars": {Data: []byte(`image_uri = "ghcr.io/org/app:3.3.3"`)},
 		"main.tf":          {Data: []byte(`image = var.image_uri`)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -420,7 +420,7 @@ resource "aws_ecs_task_definition" "app" {
 }
 `)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -437,7 +437,7 @@ func TestDetector_DetectDir_suppressAnnotation(t *testing.T) {
 			"  image = \"ghcr.io/org/app:1.0\" # oci-image-detector:ignore\n" +
 			"}\n")},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -452,7 +452,7 @@ func TestDetector_DetectDir_lineNumbers(t *testing.T) {
 	dir := fstest.MapFS{
 		"main.tf": {Data: []byte("resource \"x\" \"y\" {\n  image = \"ghcr.io/org/app:1.0\"\n}\n")},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -528,7 +528,7 @@ func TestDetector_DetectDir_partiallyResolvable(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := fstest.MapFS{"main.tf": {Data: []byte(tt.src)}}
-			findings, err := terraform.New().DetectDir(dir)
+			findings, err := (&terraform.Detector{}).DetectDir(dir)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -546,7 +546,7 @@ func TestDetector_DetectDir_unresolvedInterpolationNotStitched(t *testing.T) {
 	dir := fstest.MapFS{
 		"main.tf": {Data: []byte(`image = "ghcr.io/org/${aws_ecr_repository.r.name}app:1.0"`)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -569,7 +569,7 @@ resource "x" "z" {
 `)},
 		"main.tf": {Data: []byte(`image = "ghcr.io/org/sibling:3.0"`)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err == nil {
 		t.Error("expected the parse failure to be returned as an error")
 	}
@@ -596,7 +596,7 @@ func TestDetector_DetectDir_syntaxErrorHonorsSuppression(t *testing.T) {
 	dir := fstest.MapFS{
 		"main.tf": {Data: []byte("x = = 1\nimage = \"ghcr.io/org/app:1.0\" # oci-image-detector:ignore\n")},
 	}
-	findings, _ := terraform.New().DetectDir(dir)
+	findings, _ := (&terraform.Detector{}).DetectDir(dir)
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for suppressed line, got: %v", findings)
 	}
@@ -612,7 +612,7 @@ func TestDetector_DetectDir_readError(t *testing.T) {
 		},
 		name: "bad.tf",
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err == nil {
 		t.Error("expected the read failure to be returned as an error")
 	}
@@ -633,7 +633,7 @@ func TestDetector_DetectDir_suppressInnerLine(t *testing.T) {
 }
 `)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -659,7 +659,7 @@ resource "x" "y" {
 }
 `)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -685,7 +685,7 @@ YAML
 }
 `)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -710,7 +710,7 @@ locals {
 }
 `)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -742,7 +742,7 @@ func TestDetector_DetectDir_functions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := fstest.MapFS{"main.tf": {Data: []byte("image = " + tt.expr + "\n")}}
-			findings, err := terraform.New().DetectDir(dir)
+			findings, err := (&terraform.Detector{}).DetectDir(dir)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -763,7 +763,7 @@ locals {
 }
 `)},
 	}
-	findings, err := terraform.New().DetectDir(dir)
+	findings, err := (&terraform.Detector{}).DetectDir(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -796,7 +796,7 @@ func TestDetector_DetectDir_evaluationLimits(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := fstest.MapFS{"main.tf": {Data: []byte(tt.src)}}
-			findings, err := terraform.New().DetectDir(dir)
+			findings, err := (&terraform.Detector{}).DetectDir(dir)
 			if err == nil {
 				t.Error("expected the evaluation limit to be returned as an error")
 			}

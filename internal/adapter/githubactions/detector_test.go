@@ -7,7 +7,7 @@ import (
 )
 
 func TestDetector_Match(t *testing.T) {
-	det := githubactions.New()
+	det := &githubactions.Detector{}
 	cases := []struct {
 		path string
 		want bool
@@ -29,7 +29,7 @@ func TestDetector_Match(t *testing.T) {
 }
 
 func TestDetector_Detect(t *testing.T) {
-	det := githubactions.New()
+	det := &githubactions.Detector{}
 
 	tests := []struct {
 		name     string

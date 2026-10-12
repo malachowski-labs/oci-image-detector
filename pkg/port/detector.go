@@ -5,7 +5,6 @@
 package port
 
 import (
-	"fmt"
 	"io/fs"
 
 	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
@@ -25,23 +24,6 @@ const (
 	// TierFallback marks a detector that accepts files no specialist claimed.
 	TierFallback
 )
-
-// Valid reports whether t is one of the declared tiers.
-func (t Tier) Valid() bool {
-	return t == TierSpecialist || t == TierFallback
-}
-
-// String returns the lower-case name of the tier, for logs and error messages.
-func (t Tier) String() string {
-	switch t {
-	case TierSpecialist:
-		return "specialist"
-	case TierFallback:
-		return "fallback"
-	default:
-		return fmt.Sprintf("Tier(%d)", int(t))
-	}
-}
 
 // Detector is a driven port implemented by each file-type-specific detection
 // strategy. The ScanService iterates registered detectors, calls Match to find
