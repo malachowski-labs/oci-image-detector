@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -39,6 +40,22 @@ func (d *stubDetector) Detect(p string, _ []byte) ([]domain.Finding, error) {
 	}
 	return out, d.err
 }
+
+// stubContentDetector is a stubDetector that also matches on content: it
+// claims files whose content has the given prefix.
+type stubContentDetector struct {
+	stubDetector
+	prefix string
+}
+
+func (d *stubContentDetector) MatchContent(_ string, content []byte) bool {
+	return strings.HasPrefix(string(content), d.prefix)
+}
+
+// stubFallback is a stubDetector in the fallback tier.
+type stubFallback struct{ stubDetector }
+
+func (d *stubFallback) Tier() port.Tier { return port.TierFallback }
 
 // stubDirDetector matches directories whose path has the given suffix and
 // owns files whose path has the given suffix.
@@ -126,6 +143,45 @@ func TestScanFS_firstDetectorWins(t *testing.T) {
 	}
 	if findings[0].Ref.Raw != "first:1" {
 		t.Errorf("expected finding from first detector, got %q", findings[0].Ref.Raw)
+	}
+}
+
+func TestScanFS_contentMatcher(t *testing.T) {
+	// All three detectors accept the .yaml path. The one that claims by path
+	// alone wins; the content matcher comes next, and only for content it
+	// accepts; the fallback takes the rest. The detectors are deliberately
+	// passed with the content matcher first: its position must not matter.
+	byContent := &stubContentDetector{
+		stubDetector: stubDetector{name: "content", suffix: ".yaml", results: []domain.Finding{{Ref: ref("c:1")}}},
+		prefix:       "kind:",
+	}
+	byPath := &stubDetector{name: "path", suffix: "values.yaml", results: []domain.Finding{{Ref: ref("p:1")}}}
+	fallback := &stubFallback{stubDetector{name: "fallback", suffix: "", results: []domain.Finding{{Ref: ref("f:1")}}}}
+
+	fsys := fstest.MapFS{
+		"values.yaml": {Data: []byte("kind: Pod")},
+		"deploy.yaml": {Data: []byte("kind: Pod")},
+		"other.yaml":  {Data: []byte("foo: bar")},
+		"notes.txt":   {Data: []byte("kind: Pod")},
+	}
+	findings, err := newService([]port.Detector{byContent, byPath, fallback}, nil).
+		ScanFS(context.Background(), fsys, port.ScanOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := map[string]string{}
+	for _, f := range findings {
+		got[f.FilePath] = f.Ref.Raw
+	}
+	want := map[string]string{
+		"values.yaml": "p:1", // claimed by path, despite matching content
+		"deploy.yaml": "c:1", // claimed by content
+		"other.yaml":  "f:1", // content declined
+		"notes.txt":   "f:1", // path declined by the content matcher
+	}
+	if !maps.Equal(got, want) {
+		t.Errorf("findings by file = %v, want %v", got, want)
 	}
 }
 

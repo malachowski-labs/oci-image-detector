@@ -27,8 +27,8 @@ type ScanService struct {
 // NewScanService constructs a ScanService.
 // detectors handles individual files; dirDetectors handles whole directories
 // (e.g. Terraform, which needs cross-file variable resolution).
-// detectors are consulted in the order given and the first match wins;
-// pkg/registry produces that order from each detector's declared tier.
+// detectors are consulted in the order given, which pkg/registry produces
+// from each detector's declared tier; see claimant for which match wins.
 // Every dirDetector that matches a directory runs on it.
 func NewScanService(
 	detectors []port.Detector,
@@ -149,7 +149,7 @@ func (s *ScanService) scanDir(fsys fs.FS, dirPath string) []domain.Finding {
 	return findings
 }
 
-// scanFile dispatches a single file to the first matching Detector and returns
+// scanFile dispatches a single file to the detector that claims it and returns
 // its findings. A file owned by a DirectoryAwareDetector is left to that
 // detector, even when its directory did not match or could not be scanned:
 // a file-level detector must not silently take over for it.
@@ -158,20 +158,21 @@ func (s *ScanService) scanFile(fsys fs.FS, filePath string) []domain.Finding {
 		return nil
 	}
 
-	det := s.matchDetector(filePath)
+	// The content is read only when some detector accepts the path.
+	candidates := s.matchPath(filePath)
+	if len(candidates) == 0 {
+		return nil
+	}
+	content, err := fs.ReadFile(fsys, filePath)
+	if err != nil {
+		s.log.Warn("cannot read file", zap.String("path", filePath), zap.Error(err))
+		return nil
+	}
+
+	det := claimant(candidates, filePath, content)
 	if det == nil {
 		return nil
 	}
-
-	content, err := fs.ReadFile(fsys, filePath)
-	if err != nil {
-		s.log.Warn("cannot read file",
-			zap.String("path", filePath),
-			zap.String("detector", det.Name()),
-			zap.Error(err))
-		return nil
-	}
-
 	findings, err := det.Detect(filePath, content)
 	if err != nil {
 		s.log.Warn("detector error",
@@ -190,15 +191,43 @@ func (s *ScanService) ownedByDirDetector(filePath string) bool {
 	})
 }
 
-// matchDetector returns the first registered Detector whose Match returns true
-// for the given path, or nil if none match.
-func (s *ScanService) matchDetector(filePath string) port.Detector {
+// matchPath returns the detectors whose Match accepts the path, in the order
+// they were registered.
+func (s *ScanService) matchPath(filePath string) []port.Detector {
+	var out []port.Detector
 	for _, det := range s.detectors {
 		if det.Match(filePath) {
+			out = append(out, det)
+		}
+	}
+	return out
+}
+
+// claimant picks the detector that handles the file among those that accepted
+// its path: the first specialist that claims by path alone, else the first
+// ContentMatcher that accepts the content, else the first fallback. It returns
+// nil when none of them claims the file.
+func claimant(candidates []port.Detector, filePath string, content []byte) port.Detector {
+	var byContent []port.Detector
+	var fallback port.Detector
+	for _, det := range candidates {
+		switch _, matchesContent := det.(port.ContentMatcher); {
+		case matchesContent:
+			byContent = append(byContent, det)
+		case det.Tier() != port.TierFallback:
+			return det
+		case fallback == nil:
+			fallback = det
+		}
+	}
+
+	// The content is only inspected once no detector has claimed the path.
+	for _, det := range byContent {
+		if det.(port.ContentMatcher).MatchContent(filePath, content) {
 			return det
 		}
 	}
-	return nil
+	return fallback
 }
 
 // matchesAny reports whether s matches any of the provided doublestar glob

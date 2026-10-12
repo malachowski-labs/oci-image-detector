@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/malachowski-labs/oci-image-detector/internal/githubpath"
+	"github.com/malachowski-labs/oci-image-detector/internal/yamlscan"
 	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
 	"github.com/malachowski-labs/oci-image-detector/pkg/imageref"
 	"github.com/malachowski-labs/oci-image-detector/pkg/port"
@@ -33,87 +34,120 @@ func (d *Detector) Name() string { return string(Strategy) }
 func (d *Detector) Tier() port.Tier { return port.TierSpecialist }
 
 // Match implements port.Detector.
-// Returns true for values.yaml and values.yml at any depth in the tree, except
-// under .github/workflows/ and .github/actions/: GitHub treats every YAML file
-// there as a workflow or action regardless of its name.
+// Returns true for values.yaml and its per-environment variants
+// (values-prod.yaml, values.prod.yaml, prod-values.yaml, prod.values.yaml),
+// with either YAML extension, case-insensitively and at any depth in the tree,
+// except under .github/workflows/ and .github/actions/: GitHub treats every
+// YAML file there as a workflow or action regardless of its name.
 func (d *Detector) Match(filePath string) bool {
 	if githubpath.IsReserved(filePath) {
 		return false
 	}
 
 	lower := strings.ToLower(path.Base(filePath))
-	return lower == "values.yaml" || lower == "values.yml"
+	stem, ok := strings.CutSuffix(lower, ".yaml")
+	if !ok {
+		if stem, ok = strings.CutSuffix(lower, ".yml"); !ok {
+			return false
+		}
+	}
+
+	return stem == "values" ||
+		strings.HasPrefix(stem, "values-") || strings.HasPrefix(stem, "values.") ||
+		strings.HasSuffix(stem, "-values") || strings.HasSuffix(stem, ".values")
 }
 
 // Detect implements port.Detector.
 //
-// It walks the YAML document tree looking for image blocks: mapping nodes that
-// (a) sit under an image-shaped parent key (e.g. "image", "mainImage"), and
-// (b) carry a "repository" plus a pinning qualifier (tag or digest). The
-// assembled raw is then validated with `imageref.Parse` so any non-image
-// string that survives the structural checks (a `repository: https://…`
-// literal, a free-form description, …) is dropped.
+// It reports the images a values file names under an image-shaped key (e.g.
+// "image", "mainImage", "init-image"), in either of two forms:
 //
-// The Bitnami `image: { registry?, repository, tag, digest? }` convention is
-// the canonical shape this detector targets. Other conventions that use a
+//   - an image block: a mapping with a "repository" plus a pinning qualifier
+//     (tag or digest), optionally with a "registry". The Bitnami
+//     `image: { registry?, repository, tag, digest? }` convention is the
+//     canonical shape;
+//   - a single string holding a pinned reference (`image: nginx:1.25`).
+//
+// Short forms are reported as written. Other conventions that use a
 // `repository` key for non-image data (OCM repository mappings, rescoring
 // rulesets that point at Git URLs, etc.) are intentionally ignored.
+//
+// Every other string of the file, keys included, is scanned with the strict
+// imageref.Candidates filter, so fully-qualified references outside
+// image-shaped keys are still found.
 func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, error) {
 	var root yaml.Node
 	if err := yaml.Unmarshal(content, &root); err != nil {
 		return nil, fmt.Errorf("helm: parse %q: %w", filePath, err)
 	}
-	var findings []domain.Finding
-	walkNode(&root, "", filePath, &findings)
-	return findings, nil
+	w := walker{filePath: filePath}
+	w.walk(&root, "")
+	return w.findings, nil
 }
 
-// walkNode recursively traverses a yaml.Node looking for image map nodes.
+// walker collects the findings of one values file.
+type walker struct {
+	filePath string
+	findings []domain.Finding
+}
+
+// walk visits node and everything below it.
 //
 // parentKey is the mapping key under which node sits, or "" at the document
 // root. Sequence elements inherit their containing sequence's parent key so
 // that `images: [{repository, tag}, …]` patterns are also recognised.
 //
 // Limitation: when a mapping node is identified as an image block, the node is
-// consumed and its children are not recursed into. A mapping that has both a
+// consumed and its children are not visited. A mapping that has both a
 // "repository" key and nested image sub-maps will therefore only produce one
 // finding for the outermost block.
-func walkNode(node *yaml.Node, parentKey, filePath string, findings *[]domain.Finding) {
-	if node.Kind == yaml.DocumentNode {
+func (w *walker) walk(node *yaml.Node, parentKey string) {
+	switch node.Kind {
+	case yaml.DocumentNode:
 		for _, child := range node.Content {
-			walkNode(child, "", filePath, findings)
+			w.walk(child, "")
 		}
-		return
-	}
 
-	if node.Kind == yaml.MappingNode {
+	case yaml.SequenceNode:
+		for _, child := range node.Content {
+			w.walk(child, parentKey)
+		}
+
+	case yaml.MappingNode:
 		// Only attempt image-block extraction when the parent key looks like
 		// an image attribute. Without this gate, any mapping that happens to
 		// carry a `repository` key (OCM repo mappings, rescoring-config
 		// references, registry endpoint blocks, …) is mis-reported.
 		if isImageParent(parentKey) {
-			if f, ok := imageFinding(node, filePath); ok {
-				*findings = append(*findings, f)
-				// Don't recurse into a consumed image block.
+			if raw, line, ok := imageBlock(node); ok {
+				w.report(imageref.Parse(raw), line)
 				return
 			}
 		}
-		// Recurse into values of this map, threading each key through to the
-		// child so it can decide whether it is an image block.
 		for i := 0; i+1 < len(node.Content); i += 2 {
-			key := node.Content[i].Value
-			walkNode(node.Content[i+1], key, filePath, findings)
+			// Keys are text too: a reference used as a mapping key is reported.
+			yamlscan.Scalar(node.Content[i], w.report)
+			w.walk(node.Content[i+1], node.Content[i].Value)
 		}
-		return
-	}
 
-	if node.Kind == yaml.SequenceNode {
-		// Sequence elements inherit the parent key (e.g. `images: [{…}, {…}]`
-		// — each element should be evaluated as if its parent were "images").
-		for _, child := range node.Content {
-			walkNode(child, parentKey, filePath, findings)
+	case yaml.ScalarNode:
+		if isImageParent(parentKey) && isPinnedImage(node.Value) {
+			if !suppress.IsIgnoredLine(node.LineComment) {
+				w.report(imageref.Parse(node.Value), node.Line)
+			}
+			return
 		}
+		yamlscan.Scalar(node, w.report)
 	}
+}
+
+func (w *walker) report(ref domain.ImageRef, line int) {
+	w.findings = append(w.findings, domain.Finding{
+		Ref:      ref,
+		FilePath: w.filePath,
+		Line:     uint(line),
+		Strategy: Strategy,
+	})
 }
 
 // imageParentSuffixes are the case-insensitive suffixes that mark a mapping
@@ -152,65 +186,54 @@ func blockIgnored(node *yaml.Node) bool {
 	return false
 }
 
-// imageFinding extracts a finding from a mapping node already known to sit in
-// image position. ok=false drops the candidate entirely; callers fall back to
-// recursing into the mapping's children.
+// imageBlock assembles the reference an image block names and returns it with
+// the line of its repository. ok=false means node is not an image block, or is
+// suppressed; callers fall back to visiting its children.
 //
 // A mapping qualifies as an image block only if it carries a "repository" key
 // AND a pinning qualifier — a non-empty "tag" or "digest". Tag-less references
 // are intentionally rejected: the consumers of this tool need scannable
 // (i.e. version-pinned) image references, and a registry path on its own is
 // almost always non-image config (an OCM repository, a registry endpoint, …).
-//
-// `repository` values that contain `://` are treated as URL literals (Git
-// repos, Helm `oci://` chart references, https endpoints) and rejected
-// up-front. go-containerregistry's WeakValidation otherwise accepts strings
-// like `https://example.com/org/app:v1` as references because the trailing
-// `:v1` matches its tag grammar — the structural parent gate is not enough
-// to keep those out.
-//
-// Once assembled, the raw is validated with `imageref.Parse`:
-//
-//   - Parsed=true means go-containerregistry recognised the string as a
-//     reference; we trust the surrounding structural context (image-shaped
-//     parent + tag/digest sibling) to vouch for it. This keeps Bitnami short
-//     forms like `repository: nginx, tag: "1.25"` working even though their
-//     registry host defaults to docker.io.
-//   - Parsed=false is preserved only when the raw contains a template
-//     placeholder (`{{ .Values.imageTag }}`, `${var}`). Those are legitimate
-//     findings — the version is unresolved at scan time. Any other parse
-//     failure is dropped.
-func imageFinding(node *yaml.Node, filePath string) (domain.Finding, bool) {
-	repo, repoLine := mapValue(node, "repository")
-	if repo == "" || strings.Contains(repo, "://") {
-		return domain.Finding{}, false
-	}
-	if blockIgnored(node) {
-		return domain.Finding{}, false
-	}
+func imageBlock(node *yaml.Node) (raw string, line int, ok bool) {
+	repo, line := mapValue(node, "repository")
 	host, _ := mapValue(node, "registry")
-	if strings.Contains(host, "://") {
-		return domain.Finding{}, false
-	}
 	tag, _ := mapValue(node, "tag")
 	digest, _ := mapValue(node, "digest")
-	if tag == "" && digest == "" {
-		return domain.Finding{}, false
+	if repo == "" || (tag == "" && digest == "") || blockIgnored(node) {
+		return "", 0, false
 	}
 
-	raw := buildRaw(host, repo, tag, digest)
-	ref := imageref.Parse(raw)
+	raw = buildRaw(host, repo, tag, digest)
+	return raw, line, isReference(raw)
+}
 
-	if !ref.Parsed && !imageref.ContainsTemplate(raw) {
-		return domain.Finding{}, false
+// isPinnedImage reports whether value, a string under an image-shaped key, is
+// a reference with a tag or digest. A tag-less value is rejected for the same
+// reason a tag-less image block is: on its own it is as likely to be a file
+// name or a flag (`backgroundImage: logo.png`) as an image.
+func isPinnedImage(value string) bool {
+	pinned := strings.Contains(value, "@") ||
+		strings.LastIndex(value, ":") > strings.LastIndex(value, "/")
+	return pinned && isReference(value)
+}
+
+// isReference reports whether raw can be reported as an image reference.
+//
+// A value containing `://` is a URL literal (a Git repository, a Helm `oci://`
+// chart reference, an https endpoint). go-containerregistry would otherwise
+// accept strings like `https://example.com/org/app:v1`, because the trailing
+// `:v1` matches its tag grammar.
+//
+// A value that does not parse is kept only when it contains a template
+// placeholder (`{{ .Values.imageTag }}`, `${var}`): the version is unresolved
+// at scan time, which is a legitimate finding. Any other parse failure is not
+// a reference.
+func isReference(raw string) bool {
+	if strings.Contains(raw, "://") {
+		return false
 	}
-
-	return domain.Finding{
-		Ref:      ref,
-		FilePath: filePath,
-		Line:     uint(repoLine),
-		Strategy: Strategy,
-	}, true
+	return imageref.Parse(raw).Parsed || imageref.ContainsTemplate(raw)
 }
 
 // mapValue returns the string value and line number for key in a MappingNode.

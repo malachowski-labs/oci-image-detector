@@ -16,8 +16,15 @@ func TestDetector_Match(t *testing.T) {
 		{"values.yml", true},
 		{"charts/myapp/values.yaml", true},
 		{"Values.yaml", true},
+		{"values-prod.yaml", true},
+		{"values.prod.yml", true},
+		{"charts/myapp/prod-values.yaml", true},
+		{"env/prod.values.yaml", true},
 		{"values.json", false},
 		{"other.yaml", false},
+		{"myvalues.yaml", false},
+		{"valuesprod.yaml", false},
+		{"values/deploy.yaml", false},
 		{"Dockerfile", false},
 		{".github/workflows/values.yaml", false},
 		{".github/actions/build/values.yml", false},
@@ -224,6 +231,74 @@ metricsImage:
   tag: v2
 `,
 			wantRaws: []string{"org/metrics:v2"},
+		},
+		{
+			name: "pinned string under an image-shaped key",
+			content: `
+image: nginx:1.25
+sidecar:
+  image: ghcr.io/org/sidecar:v1
+initImage: busybox@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1
+extraImages:
+  - redis:7
+  - "registry.example.com:5000/org/tool:v2"
+`,
+			wantRaws: []string{
+				"nginx:1.25",
+				"ghcr.io/org/sidecar:v1",
+				"busybox@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
+				"redis:7",
+				"registry.example.com:5000/org/tool:v2",
+			},
+		},
+		{
+			name: "string under an image-shaped key that is not a pinned reference",
+			content: `
+image: nginx
+backgroundImage: assets/logo.png
+heroImage: https://example.com/img/hero:v1
+pullImage: "true"
+image_note: "see docs: pick an image"
+`,
+			wantRaws: nil,
+		},
+		{
+			name: "templated string under an image-shaped key is kept raw",
+			content: `
+image: "{{ .Values.global.registry }}/app:{{ .Values.tag }}"
+`,
+			wantRaws: []string{"{{ .Values.global.registry }}/app:{{ .Values.tag }}"},
+		},
+		{
+			name: "fully-qualified references outside image-shaped keys",
+			content: `
+extraEnv:
+  - name: RELATED_IMAGE
+    value: quay.io/org/related:v2
+  - name: SHORT_FORM
+    value: nginx:1.25
+args: ["--sidecar=ghcr.io/org/sidecar:v1"]
+digests:
+  ghcr.io/org/keyed:v3: sha256:abc
+script: |
+  docker pull ghcr.io/org/tool:v4
+`,
+			wantRaws: []string{
+				"quay.io/org/related:v2",
+				"ghcr.io/org/sidecar:v1",
+				"ghcr.io/org/keyed:v3",
+				"ghcr.io/org/tool:v4",
+			},
+		},
+		{
+			name: "ignore annotation on a string value",
+			content: `
+image: nginx:1.25  # oci-image-detector:ignore
+extraEnv:
+  - value: quay.io/org/related:v2  # oci-image-detector:ignore
+  - value: quay.io/org/kept:v2
+`,
+			wantRaws: []string{"quay.io/org/kept:v2"},
 		},
 		{
 			name: "longer marker is not the ignore annotation",

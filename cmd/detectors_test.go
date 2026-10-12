@@ -45,7 +45,7 @@ func TestBuiltinDetectors_exactSet(t *testing.T) {
 	for _, d := range registry.Default().Detectors() {
 		files = append(files, d.Name())
 	}
-	if want := []string{"compose", "dockerfile", "githubactions", "helm", "generic"}; !slices.Equal(files, want) {
+	if want := []string{"compose", "dockerfile", "githubactions", "helm", "kubernetes", "generic"}; !slices.Equal(files, want) {
 		t.Errorf("file-level detectors = %v, want %v", files, want)
 	}
 
@@ -58,9 +58,10 @@ func TestBuiltinDetectors_exactSet(t *testing.T) {
 	}
 }
 
-// Specialists must claim disjoint sets of files. Name order within a tier only
-// makes the result deterministic; it must never be what decides which
-// specialist owns a file.
+// Specialists that claim by path must claim disjoint sets of files. Name order
+// within a tier only makes the result deterministic; it must never be what
+// decides which specialist owns a file. A specialist that also matches on
+// content is left out: it is only consulted for files none of these claimed.
 func TestBuiltinDetectors_specialistsDoNotOverlap(t *testing.T) {
 	tests := []struct {
 		path string
@@ -71,6 +72,8 @@ func TestBuiltinDetectors_specialistsDoNotOverlap(t *testing.T) {
 		{path: "build/app.dockerfile", want: "dockerfile"},
 		{path: "values.yaml", want: "helm"},
 		{path: "charts/app/values.yml", want: "helm"},
+		{path: "charts/app/values-prod.yaml", want: "helm"},
+		{path: "env/prod-values.yml", want: "helm"},
 		{path: ".github/workflows/ci.yml", want: "githubactions"},
 		{path: ".github/actions/build/action.yaml", want: "githubactions"},
 		// GitHub treats these as workflows and actions regardless of their name.
@@ -88,7 +91,8 @@ func TestBuiltinDetectors_specialistsDoNotOverlap(t *testing.T) {
 		t.Run(tt.path, func(t *testing.T) {
 			var owners []string
 			for _, d := range registry.Default().Detectors() {
-				if d.Tier() == port.TierSpecialist && d.Match(tt.path) {
+				_, byContent := d.(port.ContentMatcher)
+				if d.Tier() == port.TierSpecialist && !byContent && d.Match(tt.path) {
 					owners = append(owners, d.Name())
 				}
 			}

@@ -42,6 +42,8 @@ type Detector interface {
 
 	// Match reports whether this detector should handle the given file path.
 	// Path is slash-separated and relative to the scan root.
+	// A detector that needs to look at the content as well also implements
+	// ContentMatcher.
 	Match(path string) bool
 
 	// Detect scans the content of a single file and returns all findings.
@@ -50,6 +52,22 @@ type Detector interface {
 	// Returning an error does not stop the overall scan; the service logs it
 	// and moves on to the next file.
 	Detect(path string, content []byte) ([]domain.Finding, error)
+}
+
+// ContentMatcher is an optional extension of Detector for formats that follow
+// no naming convention, so that a path alone cannot tell whether a file
+// belongs to them (a Kubernetes manifest, for instance).
+//
+// A Detector that implements it claims a file only when both Match and
+// MatchContent accept it; Match stays the cheap filter that spares the
+// content check for most files. Such a detector is consulted after every
+// specialist that claims files by path alone and before any fallback, so a
+// claim by path always takes precedence over a claim by content.
+type ContentMatcher interface {
+	// MatchContent reports whether this detector should handle the file,
+	// judging by its content. It is only called for paths Match accepted.
+	// path is slash-separated and relative to the scan root.
+	MatchContent(path string, content []byte) bool
 }
 
 // DirectoryAwareDetector is a driven port for strategies that require access

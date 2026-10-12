@@ -22,7 +22,10 @@ rules below add what the interfaces cannot express.
 
 ### Claiming files
 
-1. `Match` is cheap and looks at the path only.
+1. `Match` is cheap and looks at the path only. A format with no naming
+   convention also implements `port.ContentMatcher`; its `Match` still narrows
+   the candidates by path, and `MatchContent` rejects cheaply before parsing.
+   See `docs/adr/0002`.
 2. Specialists must claim disjoint sets of files; order within a tier is not a
    precedence. When a new specialist's files overlap an existing one's, narrow
    one of them in the same change and add a `Match` test for the overlap.
