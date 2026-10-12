@@ -10,6 +10,7 @@ import (
 
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/imageref"
 	"github.com/malachowski-labs/oci-image-detector/internal/domain"
+	"github.com/malachowski-labs/oci-image-detector/internal/port"
 )
 
 // Strategy is the stable identifier for this detection strategy.
@@ -23,6 +24,9 @@ func New() *Detector { return &Detector{} }
 
 // Name implements port.Detector.
 func (d *Detector) Name() string { return string(Strategy) }
+
+// Tier implements port.Detector.
+func (d *Detector) Tier() port.Tier { return port.TierSpecialist }
 
 // Match implements port.Detector.
 // Returns true for values.yaml and values.yml at any depth in the tree.

@@ -24,7 +24,8 @@ type stubDetector struct {
 	err     error
 }
 
-func (d *stubDetector) Name() string { return d.name }
+func (d *stubDetector) Name() string    { return d.name }
+func (d *stubDetector) Tier() port.Tier { return port.TierSpecialist }
 func (d *stubDetector) Match(p string) bool {
 	return len(p) >= len(d.suffix) && p[len(p)-len(d.suffix):] == d.suffix
 }
