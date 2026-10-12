@@ -2,8 +2,6 @@
 // It has no dependencies on any infrastructure, framework, or adapter code.
 package domain
 
-import "fmt"
-
 // ImageRef is an immutable value object representing a parsed OCI image reference.
 //
 // Raw is always preserved so no information is lost regardless of whether
@@ -46,16 +44,9 @@ func NewImageRef(raw string) ImageRef {
 }
 
 // NewParsedImageRef constructs a fully-populated ImageRef.
-// Registry and repository must both be non-empty; this is validated at
-// construction time so Canonical never produces a malformed key.
-// Pass an empty tag or digest when not applicable.
-func NewParsedImageRef(raw, registry, repository, tag, digest string) (ImageRef, error) {
-	if registry == "" {
-		return ImageRef{}, fmt.Errorf("registry must not be empty (raw: %q)", raw)
-	}
-	if repository == "" {
-		return ImageRef{}, fmt.Errorf("repository must not be empty (raw: %q)", raw)
-	}
+// Registry and repository must both be non-empty, or Canonical produces a
+// malformed key. Pass an empty tag or digest when not applicable.
+func NewParsedImageRef(raw, registry, repository, tag, digest string) ImageRef {
 	return ImageRef{
 		Raw:        raw,
 		Registry:   registry,
@@ -63,12 +54,7 @@ func NewParsedImageRef(raw, registry, repository, tag, digest string) (ImageRef,
 		Tag:        tag,
 		Digest:     digest,
 		Parsed:     true,
-	}, nil
-}
-
-// String returns the raw image reference as found in the source file.
-func (r ImageRef) String() string {
-	return r.Raw
+	}
 }
 
 // Canonical returns the fully-qualified normalised image reference.

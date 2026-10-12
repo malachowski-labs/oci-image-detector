@@ -1,0 +1,25 @@
+version: "2"
+
+linters:
+  # The standard set (errcheck, govet, ineffassign, staticcheck, unused) plus
+  # the linters below. Add one only together with the fixes it asks for.
+  default: standard
+  enable:
+    - errorlint # errors are compared with errors.Is/As and wrapped with %w
+    - gocyclo # functions stay small enough to review
+    - misspell
+    - revive # exported identifiers carry doc comments, idiomatic naming
+    - unconvert
+    - unparam
+  settings:
+    gocyclo:
+      min-complexity: 15
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/malachowski-labs/oci-image-detector

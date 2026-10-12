@@ -8,7 +8,7 @@ import (
 )
 
 func TestDetector_Match(t *testing.T) {
-	det := generic.New()
+	det := &generic.Detector{}
 	cases := []struct {
 		path string
 		want bool
@@ -25,10 +25,10 @@ func TestDetector_Match(t *testing.T) {
 		{"Dockerfile", true},
 		{"values.yaml", true},
 		{".github/workflows/ci.yml", true},
-		// Terraform is directory-aware and therefore outside tier ordering.
-		{"main.tf", false},
-		{"terraform.tfvars", false},
-		{"modules/app/MAIN.TF", false},
+		// Nor is yielding to a directory-aware detector: the scan service
+		// holds back the files such a detector owns.
+		{"main.tf", true},
+		{"terraform.tfvars", true},
 	}
 	for _, tc := range cases {
 		if got := det.Match(tc.path); got != tc.want {
@@ -38,7 +38,7 @@ func TestDetector_Match(t *testing.T) {
 }
 
 func TestDetector_Detect(t *testing.T) {
-	det := generic.New()
+	det := &generic.Detector{}
 
 	tests := []struct {
 		name     string
@@ -165,5 +165,25 @@ func TestDetector_Detect(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDetector_Detect_veryLongLine(t *testing.T) {
+	// No line-length limit: a reference at the end of a multi-megabyte line
+	// (minified JSON, generated YAML) is still found.
+	content := strings.Repeat("x", 2<<20) + " ghcr.io/org/app:v1\nquay.io/org/next:v2\r\n"
+
+	findings, err := (&generic.Detector{}).Detect("bundle.min.js", []byte(content))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 2 {
+		t.Fatalf("got %d findings, want 2: %v", len(findings), findings)
+	}
+	if findings[0].Ref.Raw != "ghcr.io/org/app:v1" || findings[0].Line != 1 {
+		t.Errorf("finding[0] = %q at line %d, want ghcr.io/org/app:v1 at line 1", findings[0].Ref.Raw, findings[0].Line)
+	}
+	if findings[1].Ref.Raw != "quay.io/org/next:v2" || findings[1].Line != 2 {
+		t.Errorf("finding[1] = %q at line %d, want quay.io/org/next:v2 at line 2", findings[1].Ref.Raw, findings[1].Line)
 	}
 }

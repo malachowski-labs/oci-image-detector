@@ -143,7 +143,7 @@ JSON report (when `--output-file` is set):
 | Code | Meaning |
 |---|---|
 | `0` | Scan completed; findings present (or `--allow-empty` set) |
-| `1` | Scan error, or no findings found and `--allow-empty` not set |
+| `1` | Scan or report error, or no findings found and `--allow-empty` not set |
 
 ---
 
@@ -234,7 +234,7 @@ Add `oci-image-detector:ignore` in a comment next to the image reference. Where 
 |---|---|
 | Any text file | Anywhere on the line holding the reference |
 | Terraform | On the first line of the attribute, even when the literal sits on a later line of a multi-line expression |
-| Helm values | YAML comment on the `repository:` line |
+| Helm values | YAML comment on any line of the image block (`registry:`, `repository:`, `tag:` or `digest:`) |
 | GitHub Actions | YAML comment on the `uses:` / `image:` / `container:` value itself |
 | Docker Compose | YAML comment on the `image:` value itself |
 | Dockerfile | Not supported — use [`--exclude-images`](#--exclude-images--exclude-images-input) |
@@ -320,7 +320,7 @@ Disabling a detector does not exclude its files. With `dockerfile` off, a Docker
 
 Detectors are plugins compiled into the binary. To add one for a format the built-in set does not cover, build your own binary: write a detector package, register it from `init`, and reuse this project's command.
 
-A file-level detector implements [`port.Detector`](pkg/port/detector.go) and declares a tier — `port.TierSpecialist` for a detector that claims one file format, `port.TierFallback` for one that takes whatever no specialist claimed. Specialists are always consulted before fallbacks, and the first match wins. A detector that needs a whole directory at once implements `port.DirectoryAwareDetector` and registers with `registry.MustRegisterDir`.
+A file-level detector implements [`port.Detector`](pkg/port/detector.go) and declares a tier — `port.TierSpecialist` for a detector that claims one file format, `port.TierFallback` for one that takes whatever no specialist claimed. Specialists are always consulted before fallbacks, and the first match wins. A detector that needs a whole directory at once implements `port.DirectoryAwareDetector` and registers with `registry.MustRegisterDir`. Its `Owns` method names the files of its format: those are never handed to a file-level detector, while the other files of the directory and its subdirectories are scanned as usual.
 
 ```go
 package nomad
@@ -376,7 +376,7 @@ Detector names must be unique across the binary, including the built-in ones (`c
 
 Two helper packages are available to detectors:
 
-- [`pkg/imageref`](pkg/imageref/parse.go) — `Parse` resolves a reference into registry, repository and tag or digest; `Candidates` and `LooksLikeImage` are the precision filters for scanning unstructured text.
+- [`pkg/imageref`](pkg/imageref/parse.go) — `Parse` resolves a reference into registry, repository and tag or digest; `Candidates` is the precision filter for scanning unstructured text. `ContainsTemplate` tells an unresolved placeholder (`${TAG}`, `{{ .Values.tag }}`) from a string that is simply not a reference.
 - [`pkg/suppress`](pkg/suppress/annotation.go) — `IsIgnoredLine` recognises the [inline annotation](#inline-annotation), so a custom detector can honour it the same way the built-in ones do.
 
 ## Supported platforms

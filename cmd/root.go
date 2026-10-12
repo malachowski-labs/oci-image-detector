@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -20,9 +21,6 @@ import (
 	"github.com/malachowski-labs/oci-image-detector/pkg/registry"
 )
 
-// builtinExcludes are patterns always applied before user-supplied --exclude
-// values. Users cannot override these; they represent paths that should never
-// be scanned regardless of the invocation context.
 // builtinExcludes are patterns always prepended to user-supplied --exclude
 // values. These paths should never be scanned regardless of the invocation
 // context and cannot be overridden by the caller.
@@ -75,7 +73,7 @@ When --output-file is set a machine-readable JSON report is also written.
 
 Exit codes:
   0  scan completed; findings (or --allow-empty set)
-  1  scan error, or no findings found and --allow-empty not set`,
+  1  scan or report error, or no findings found and --allow-empty not set`,
 
 		// Suppress the default "Usage:" dump on RunE errors and cobra's own
 		// error printing so we control the format ourselves in Execute.
@@ -123,7 +121,7 @@ func run(ctx context.Context, opts options) error {
 	scanner := service.NewScanService(detectors.Detectors(), detectors.DirDetectors(), log)
 
 	findings, err := scanner.Scan(ctx, opts.directory, port.ScanOptions{
-		Exclude:       append(builtinExcludes, opts.exclude...),
+		Exclude:       slices.Concat(builtinExcludes, opts.exclude),
 		ExcludeImages: opts.excludeImages,
 	})
 	if err != nil {
@@ -136,10 +134,14 @@ func run(ctx context.Context, opts options) error {
 		reporters = append(reporters, reporter.NewJSONFile(opts.outputFile))
 	}
 
+	// Every reporter runs even when an earlier one fails, so a broken JSON
+	// path does not also cost the caller the stdout report.
+	var reportErrs []error
 	for _, r := range reporters {
-		if err := r.Report(findings); err != nil {
-			log.Error("reporter error", zap.Error(err))
-		}
+		reportErrs = append(reportErrs, r.Report(findings))
+	}
+	if err := errors.Join(reportErrs...); err != nil {
+		return fmt.Errorf("report: %w", err)
 	}
 
 	if len(findings) == 0 && !opts.allowEmpty {

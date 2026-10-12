@@ -7,7 +7,7 @@ import (
 )
 
 func TestDetector_Match(t *testing.T) {
-	det := compose.New()
+	det := &compose.Detector{}
 	cases := []struct {
 		path string
 		want bool
@@ -38,7 +38,7 @@ func TestDetector_Match(t *testing.T) {
 }
 
 func TestDetector_Detect(t *testing.T) {
-	det := compose.New()
+	det := &compose.Detector{}
 
 	tests := []struct {
 		name     string
@@ -276,7 +276,7 @@ version: "3.9"
 func TestDetector_Detect_line(t *testing.T) {
 	content := "services:\n  web:\n    image: nginx:1.25\n"
 
-	findings, err := compose.New().Detect("compose.yaml", []byte(content))
+	findings, err := (&compose.Detector{}).Detect("compose.yaml", []byte(content))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestDetector_Detect_line(t *testing.T) {
 }
 
 func TestDetector_Detect_invalidYAML(t *testing.T) {
-	if _, err := compose.New().Detect("compose.yaml", []byte("services: [unterminated")); err == nil {
+	if _, err := (&compose.Detector{}).Detect("compose.yaml", []byte("services: [unterminated")); err == nil {
 		t.Error("expected an error for invalid YAML")
 	}
 }

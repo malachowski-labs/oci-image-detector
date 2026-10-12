@@ -10,11 +10,7 @@ import (
 )
 
 func mustParsedRef(raw, registry, repo, tag string) domain.ImageRef {
-	ref, err := domain.NewParsedImageRef(raw, registry, repo, tag, "")
-	if err != nil {
-		panic(err)
-	}
-	return ref
+	return domain.NewParsedImageRef(raw, registry, repo, tag, "")
 }
 
 func TestStdout_noFindings(t *testing.T) {

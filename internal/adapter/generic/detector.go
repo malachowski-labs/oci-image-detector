@@ -3,9 +3,7 @@
 package generic
 
 import (
-	"bufio"
 	"bytes"
-	"path"
 	"strings"
 
 	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
@@ -18,25 +16,11 @@ import (
 // Strategy is the stable identifier for this detection strategy.
 const Strategy domain.Strategy = "generic"
 
-// maxScanTokenSize is the maximum line length the scanner will handle.
-// The bufio default of 64 KiB is raised to 1 MiB to avoid silent truncation
-// on minified JSON, auto-generated YAML, or other wide-line files.
-const maxScanTokenSize = 1 << 20 // 1 MiB
-
-// terraformExtensions lists the file extensions owned by the Terraform
-// detector. It is directory-aware, so tier ordering does not shield its files:
-// one that sits in a directory Terraform did not claim (a lone .tfvars, for
-// instance) would otherwise fall through to the generic detector.
-var terraformExtensions = []string{".tf", ".tfvars"}
-
 // Detector implements port.Detector as a regex-based fallback.
 type Detector struct{}
 
-// New returns a new Generic Detector.
-func New() *Detector { return &Detector{} }
-
 // init makes the detector available to every binary that links this package.
-func init() { registry.MustRegister(New()) }
+func init() { registry.MustRegister(&Detector{}) }
 
 // Name implements port.Detector.
 func (d *Detector) Name() string { return string(Strategy) }
@@ -45,33 +29,21 @@ func (d *Detector) Name() string { return string(Strategy) }
 func (d *Detector) Tier() port.Tier { return port.TierFallback }
 
 // Match implements port.Detector.
-// Returns true for every file except Terraform ones. Files of the file-level
-// specialists need no exclusion here: as a fallback this detector is only
-// consulted after every specialist has declined the file.
-func (d *Detector) Match(filePath string) bool {
-	lower := strings.ToLower(path.Base(filePath))
-
-	for _, ext := range terraformExtensions {
-		if strings.HasSuffix(lower, ext) {
-			return false
-		}
-	}
-
-	return true
-}
+// Returns true for every file: as a fallback this detector is only consulted
+// after every specialist has declined the file, and the scan service holds
+// back the files a directory-aware detector owns.
+func (d *Detector) Match(string) bool { return true }
 
 // Detect implements port.Detector.
 // Scans each line for candidate image reference patterns and validates them
 // with go-containerregistry.
 func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, error) {
 	var findings []domain.Finding
-	scanner := bufio.NewScanner(bytes.NewReader(content))
-	scanner.Buffer(make([]byte, maxScanTokenSize), maxScanTokenSize)
 	var lineNum uint
 
-	for scanner.Scan() {
+	for raw := range bytes.Lines(content) {
 		lineNum++
-		line := scanner.Text()
+		line := strings.TrimSuffix(strings.TrimSuffix(string(raw), "\n"), "\r")
 
 		if suppress.IsIgnoredLine(line) {
 			continue
@@ -79,9 +51,6 @@ func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, er
 
 		for _, match := range imageref.Candidates(line) {
 			ref := imageref.Parse(match)
-			if !imageref.LooksLikeImage(ref) {
-				continue
-			}
 			if isSourceFileReference(ref) {
 				continue
 			}
@@ -94,7 +63,7 @@ func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, er
 		}
 	}
 
-	return findings, scanner.Err()
+	return findings, nil
 }
 
 // sourceFileExtensions are file extensions that identify a source-code or

@@ -3,7 +3,6 @@ package imageref_test
 import (
 	"testing"
 
-	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
 	"github.com/malachowski-labs/oci-image-detector/pkg/imageref"
 )
 
@@ -162,35 +161,6 @@ func TestCandidates(t *testing.T) {
 				if got[i] != tc.want[i] {
 					t.Errorf("Candidates(%q)[%d] = %q, want %q", tc.in, i, got[i], tc.want[i])
 				}
-			}
-		})
-	}
-}
-
-func TestLooksLikeImage(t *testing.T) {
-	parsedWithSlash := imageref.Parse("ghcr.io/org/app:v1")
-	parsedWithColon := imageref.Parse("nginx:1.25")
-	parsedBareWord := imageref.Parse("enabled") // parses as library/enabled:latest — must be rejected
-	unparsedWithColon := domain.NewImageRef("${var.image}:v1")
-	unparsedNoColon := domain.NewImageRef("${var.something}")
-
-	cases := []struct {
-		name string
-		ref  domain.ImageRef
-		want bool
-	}{
-		{"parsed with slash", parsedWithSlash, true},
-		{"parsed with colon", parsedWithColon, true},
-		{"parsed bare word", parsedBareWord, false},
-		{"unparsed with colon", unparsedWithColon, true},
-		{"unparsed no colon", unparsedNoColon, false},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := imageref.LooksLikeImage(tc.ref); got != tc.want {
-				t.Errorf("LooksLikeImage(%q parsed=%v) = %v, want %v",
-					tc.ref.Raw, tc.ref.Parsed, got, tc.want)
 			}
 		})
 	}

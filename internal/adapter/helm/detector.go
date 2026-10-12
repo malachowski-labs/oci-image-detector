@@ -4,10 +4,12 @@ package helm
 import (
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/malachowski-labs/oci-image-detector/internal/githubpath"
 	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
 	"github.com/malachowski-labs/oci-image-detector/pkg/imageref"
 	"github.com/malachowski-labs/oci-image-detector/pkg/port"
@@ -21,11 +23,8 @@ const Strategy domain.Strategy = "helm"
 // Detector implements port.Detector for Helm values files.
 type Detector struct{}
 
-// New returns a new Helm Detector.
-func New() *Detector { return &Detector{} }
-
 // init makes the detector available to every binary that links this package.
-func init() { registry.MustRegister(New()) }
+func init() { registry.MustRegister(&Detector{}) }
 
 // Name implements port.Detector.
 func (d *Detector) Name() string { return string(Strategy) }
@@ -38,13 +37,11 @@ func (d *Detector) Tier() port.Tier { return port.TierSpecialist }
 // under .github/workflows/ and .github/actions/: GitHub treats every YAML file
 // there as a workflow or action regardless of its name.
 func (d *Detector) Match(filePath string) bool {
-	lowerPath := strings.ToLower(filePath)
-	if strings.Contains(lowerPath, ".github/workflows/") ||
-		strings.Contains(lowerPath, ".github/actions/") {
+	if githubpath.IsReserved(filePath) {
 		return false
 	}
 
-	lower := path.Base(lowerPath)
+	lower := strings.ToLower(path.Base(filePath))
 	return lower == "values.yaml" || lower == "values.yml"
 }
 
@@ -66,10 +63,6 @@ func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, er
 	if err := yaml.Unmarshal(content, &root); err != nil {
 		return nil, fmt.Errorf("helm: parse %q: %w", filePath, err)
 	}
-	if root.Kind == 0 {
-		return nil, nil // empty file
-	}
-
 	var findings []domain.Finding
 	walkNode(&root, "", filePath, &findings)
 	return findings, nil
@@ -126,38 +119,34 @@ func walkNode(node *yaml.Node, parentKey, filePath string, findings *[]domain.Fi
 // imageParentSuffixes are the case-insensitive suffixes that mark a mapping
 // key as an image attribute. Both singular and plural forms are accepted —
 // the plural covers the common `images: [{repository, tag}, …]` collection
-// pattern whose elements inherit the parent key. An optional hyphen or
-// underscore separator covers kebab- and snake-cased variants
-// (`init-image`, `metrics_image`, `sidecar-images`).
+// pattern whose elements inherit the parent key.
 //
-// Matching is "exact key OR ends-with suffix", which lets `mainImage`,
-// `extraImages`, etc. through while still rejecting unrelated keys.
-var imageParentSuffixes = []string{
-	"image", "images",
-	"-image", "-images",
-	"_image", "_images",
-}
+// Matching is ends-with, which lets the exact key, camel-cased keys
+// (`mainImage`, `extraImages`) and kebab- or snake-cased ones (`init-image`,
+// `metrics_image`) through while still rejecting unrelated keys.
+var imageParentSuffixes = []string{"image", "images"}
 
 // isImageParent reports whether key looks like a Helm image attribute name.
 func isImageParent(key string) bool {
-	if key == "" {
-		return false
-	}
 	lower := strings.ToLower(key)
 	for _, suffix := range imageParentSuffixes {
-		if lower == suffix || strings.HasSuffix(lower, suffix) {
+		if strings.HasSuffix(lower, suffix) {
 			return true
 		}
 	}
 	return false
 }
 
-// mapValueIgnored reports whether the value node for key in a MappingNode
-// carries the inline suppression annotation in its YAML line comment.
-func mapValueIgnored(node *yaml.Node, key string) bool {
+// imageBlockKeys are the keys an image block is assembled from.
+var imageBlockKeys = []string{"registry", "repository", "tag", "digest"}
+
+// blockIgnored reports whether any line of an image block carries the inline
+// suppression annotation in its YAML line comment.
+func blockIgnored(node *yaml.Node) bool {
 	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Value == key {
-			return strings.Contains(node.Content[i+1].LineComment, suppress.Annotation)
+		if slices.Contains(imageBlockKeys, node.Content[i].Value) &&
+			suppress.IsIgnoredLine(node.Content[i+1].LineComment) {
+			return true
 		}
 	}
 	return false
@@ -196,11 +185,11 @@ func imageFinding(node *yaml.Node, filePath string) (domain.Finding, bool) {
 	if repo == "" || strings.Contains(repo, "://") {
 		return domain.Finding{}, false
 	}
-	if mapValueIgnored(node, "repository") {
+	if blockIgnored(node) {
 		return domain.Finding{}, false
 	}
-	registry, _ := mapValue(node, "registry")
-	if strings.Contains(registry, "://") {
+	host, _ := mapValue(node, "registry")
+	if strings.Contains(host, "://") {
 		return domain.Finding{}, false
 	}
 	tag, _ := mapValue(node, "tag")
@@ -209,10 +198,10 @@ func imageFinding(node *yaml.Node, filePath string) (domain.Finding, bool) {
 		return domain.Finding{}, false
 	}
 
-	raw := buildRaw(registry, repo, tag, digest)
+	raw := buildRaw(host, repo, tag, digest)
 	ref := imageref.Parse(raw)
 
-	if !ref.Parsed && !containsTemplate(raw) {
+	if !ref.Parsed && !imageref.ContainsTemplate(raw) {
 		return domain.Finding{}, false
 	}
 
@@ -222,17 +211,6 @@ func imageFinding(node *yaml.Node, filePath string) (domain.Finding, bool) {
 		Line:     uint(repoLine),
 		Strategy: Strategy,
 	}, true
-}
-
-// containsTemplate reports whether s contains a known template placeholder
-// that could explain why imageref.Parse marked the ref unparsed. Mirrors the
-// list in imageref.containsTemplate; kept local to avoid widening that
-// package's API for a single caller.
-func containsTemplate(s string) bool {
-	return strings.Contains(s, "$") ||
-		strings.Contains(s, "{{") ||
-		strings.Contains(s, "%(") ||
-		strings.Contains(s, "#{")
 }
 
 // mapValue returns the string value and line number for key in a MappingNode.
@@ -250,10 +228,10 @@ func mapValue(node *yaml.Node, key string) (string, int) {
 // Bitnami three-key convention: "<registry>/<repo>:<tag>@<digest>". Tag and
 // digest may both be present (the canonical form keeps both); when only one
 // is set, the other is omitted.
-func buildRaw(registry, repo, tag, digest string) string {
+func buildRaw(host, repo, tag, digest string) string {
 	var sb strings.Builder
-	if registry != "" {
-		sb.WriteString(registry)
+	if host != "" {
+		sb.WriteString(host)
 		sb.WriteByte('/')
 	}
 	sb.WriteString(repo)

@@ -1,7 +1,8 @@
 package service
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 
 	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
 )
@@ -10,14 +11,11 @@ import (
 // This is called by ScanService before handing results to a Reporter,
 // guaranteeing deterministic output regardless of traversal order.
 func sortFindings(findings []domain.Finding) {
-	sort.Slice(findings, func(i, j int) bool {
-		a, b := findings[i], findings[j]
-		if a.FilePath != b.FilePath {
-			return a.FilePath < b.FilePath
-		}
-		if a.Line != b.Line {
-			return a.Line < b.Line
-		}
-		return a.Ref.Raw < b.Ref.Raw
+	slices.SortFunc(findings, func(a, b domain.Finding) int {
+		return cmp.Or(
+			cmp.Compare(a.FilePath, b.FilePath),
+			cmp.Compare(a.Line, b.Line),
+			cmp.Compare(a.Ref.Raw, b.Ref.Raw),
+		)
 	})
 }

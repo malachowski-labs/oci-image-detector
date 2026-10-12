@@ -7,7 +7,7 @@ import (
 )
 
 func TestDetector_Match(t *testing.T) {
-	det := helm.New()
+	det := &helm.Detector{}
 	cases := []struct {
 		path string
 		want bool
@@ -31,7 +31,7 @@ func TestDetector_Match(t *testing.T) {
 }
 
 func TestDetector_Detect(t *testing.T) {
-	det := helm.New()
+	det := &helm.Detector{}
 
 	tests := []struct {
 		name     string
@@ -195,6 +195,44 @@ image:
   tag: v1
 `,
 			wantRaws: nil,
+		},
+		{
+			name: "ignore annotation on repository suppresses the image",
+			content: `
+image:
+  repository: nginx  # oci-image-detector:ignore
+  tag: "1.25"
+sidecarImage:
+  repository: envoyproxy/envoy
+  tag: v1.30
+`,
+			wantRaws: []string{"envoyproxy/envoy:v1.30"},
+		},
+		{
+			name: "ignore annotation on any line of the block suppresses the image",
+			content: `
+image:
+  repository: nginx
+  tag: "1.25"  # oci-image-detector:ignore
+initImage:
+  registry: ghcr.io  # oci-image-detector:ignore
+  repository: org/init
+  tag: v1
+metricsImage:
+  repository: org/metrics
+  pullPolicy: Always  # oci-image-detector:ignore
+  tag: v2
+`,
+			wantRaws: []string{"org/metrics:v2"},
+		},
+		{
+			name: "longer marker is not the ignore annotation",
+			content: `
+image:
+  repository: nginx  # oci-image-detector:ignored
+  tag: "1.25"
+`,
+			wantRaws: []string{"nginx:1.25"},
 		},
 	}
 

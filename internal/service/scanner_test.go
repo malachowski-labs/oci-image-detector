@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"slices"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -38,15 +40,20 @@ func (d *stubDetector) Detect(p string, _ []byte) ([]domain.Finding, error) {
 	return out, d.err
 }
 
-// stubDirDetector claims directories whose path has the given suffix.
+// stubDirDetector matches directories whose path has the given suffix and
+// owns files whose path has the given suffix.
 type stubDirDetector struct {
 	name      string
 	dirSuffix string
+	ownSuffix string
 	results   []domain.Finding
 	err       error
 }
 
 func (d *stubDirDetector) Name() string { return d.name }
+func (d *stubDirDetector) Owns(p string) bool {
+	return d.ownSuffix != "" && strings.HasSuffix(p, d.ownSuffix)
+}
 func (d *stubDirDetector) MatchDir(dirPath string, _ []fs.DirEntry) bool {
 	return len(dirPath) >= len(d.dirSuffix) &&
 		dirPath[len(dirPath)-len(d.dirSuffix):] == d.dirSuffix
@@ -165,13 +172,14 @@ func TestScanFS_dirDetector_claimsDirectory(t *testing.T) {
 
 func TestScanFS_dirDetector_noDoubleReport(t *testing.T) {
 	// The generic file detector also matches .tf — it must not fire because
-	// fs.SkipDir prevents WalkDir from descending into the claimed directory.
+	// the dir-detector owns those files.
 	fsys := fstest.MapFS{
 		"infra/main.tf": {Data: []byte(`image = "nginx:latest"`)},
 	}
 	dirDet := &stubDirDetector{
 		name:      "terraform",
 		dirSuffix: "infra",
+		ownSuffix: ".tf",
 		results:   []domain.Finding{{Ref: ref("nginx:latest"), Line: 1, FilePath: "main.tf"}},
 	}
 	fileDet := &stubDetector{
@@ -186,6 +194,87 @@ func TestScanFS_dirDetector_noDoubleReport(t *testing.T) {
 	}
 	if len(findings) != 1 {
 		t.Errorf("expected 1 finding (no double-report), got %d", len(findings))
+	}
+}
+
+func TestScanFS_dirDetector_scanRoot(t *testing.T) {
+	// A dir-detector must be offered the scan root itself, not only the
+	// directories below it.
+	fsys := fstest.MapFS{"main.tf": {Data: []byte("x")}}
+	dirDet := &stubDirDetector{
+		name:      "terraform",
+		dirSuffix: ".",
+		ownSuffix: ".tf",
+		results:   []domain.Finding{{Ref: ref("nginx:latest"), Line: 1, FilePath: "main.tf"}},
+	}
+	findings, err := newService(nil, []port.DirectoryAwareDetector{dirDet}).
+		ScanFS(context.Background(), fsys, port.ScanOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 1 || findings[0].FilePath != "main.tf" {
+		t.Errorf("expected one finding at main.tf, got %v", findings)
+	}
+}
+
+func TestScanFS_dirDetector_leavesOtherFilesAndSubdirs(t *testing.T) {
+	// A matching directory hides only the files its dir-detector owns: a
+	// sibling file and a nested directory are still scanned.
+	fsys := fstest.MapFS{
+		"infra/main.tf":              {Data: []byte("x")},
+		"infra/Dockerfile":           {Data: []byte("FROM alpine:3")},
+		"infra/modules/a/main.tf":    {Data: []byte("x")},
+		"infra/modules/a/Dockerfile": {Data: []byte("FROM alpine:3")},
+	}
+	dirDet := &stubDirDetector{
+		name:      "terraform",
+		dirSuffix: "infra",
+		ownSuffix: ".tf",
+		results:   []domain.Finding{{Ref: ref("nginx:latest"), Line: 1, FilePath: "main.tf"}},
+	}
+	nested := &stubDirDetector{
+		name:      "nested",
+		dirSuffix: "modules/a",
+		results:   []domain.Finding{{Ref: ref("redis:7"), Line: 1, FilePath: "main.tf"}},
+	}
+	fileDet := &stubDetector{
+		name:    "dockerfile",
+		suffix:  "Dockerfile",
+		results: []domain.Finding{{Ref: ref("alpine:3"), Line: 1}},
+	}
+	findings, err := newService([]port.Detector{fileDet}, []port.DirectoryAwareDetector{dirDet, nested}).
+		ScanFS(context.Background(), fsys, port.ScanOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got []string
+	for _, f := range findings {
+		got = append(got, f.FilePath)
+	}
+	want := []string{"infra/Dockerfile", "infra/main.tf", "infra/modules/a/Dockerfile", "infra/modules/a/main.tf"}
+	if !slices.Equal(got, want) {
+		t.Errorf("finding paths = %v, want %v", got, want)
+	}
+}
+
+func TestScanFS_dirDetector_ownedFileInUnmatchedDir(t *testing.T) {
+	// An owned file is held back from file-level detectors even when its
+	// directory did not match.
+	fsys := fstest.MapFS{"lone/terraform.tfvars": {Data: []byte("x")}}
+	dirDet := &stubDirDetector{name: "terraform", dirSuffix: "infra", ownSuffix: ".tfvars"}
+	fileDet := &stubDetector{
+		name:    "generic",
+		suffix:  "",
+		results: []domain.Finding{{Ref: ref("nginx:latest"), Line: 1}},
+	}
+	findings, err := newService([]port.Detector{fileDet}, []port.DirectoryAwareDetector{dirDet}).
+		ScanFS(context.Background(), fsys, port.ScanOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 0 {
+		t.Errorf("expected no findings for an owned file, got %v", findings)
 	}
 }
 

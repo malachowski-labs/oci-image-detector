@@ -2,7 +2,6 @@
 package dockerfile
 
 import (
-	"bufio"
 	"bytes"
 	"path"
 	"regexp"
@@ -18,11 +17,6 @@ import (
 // Strategy is the stable identifier for this detection strategy.
 const Strategy domain.Strategy = "dockerfile"
 
-// maxScanTokenSize is the maximum line length the scanner will handle.
-// The bufio default of 64 KiB is raised to 1 MiB to avoid silent truncation
-// on unusually wide lines (e.g. inline heredocs).
-const maxScanTokenSize = 1 << 20 // 1 MiB
-
 // argRefRe matches a build-arg reference in either ${NAME} or $NAME form.
 // Modifier syntax such as ${NAME:-default} is intentionally not expanded; such
 // references are left untouched and surface as raw template findings.
@@ -31,11 +25,8 @@ var argRefRe = regexp.MustCompile(`\$\{([a-zA-Z0-9_]+)\}|\$([a-zA-Z0-9_]+)`)
 // Detector implements port.Detector for Dockerfile files.
 type Detector struct{}
 
-// New returns a new Dockerfile Detector.
-func New() *Detector { return &Detector{} }
-
 // init makes the detector available to every binary that links this package.
-func init() { registry.MustRegister(New()) }
+func init() { registry.MustRegister(&Detector{}) }
 
 // Name implements port.Detector.
 func (d *Detector) Name() string { return string(Strategy) }
@@ -74,16 +65,11 @@ type instruction struct {
 //     FROM or by COPY --from, are not images and are skipped;
 //   - "scratch", which is the empty base image and never a real reference.
 func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, error) {
-	// On a scanner error logicalInstructions returns the instructions parsed so
-	// far together with the error; we still emit findings for that partial input
-	// and surface the error to the caller (the scan service logs it).
-	instrs, err := logicalInstructions(content)
-
 	args := map[string]string{} // build-arg defaults, by name
 	stages := map[string]bool{} // declared stage names, lower-cased
 	var findings []domain.Finding
 
-	for _, in := range instrs {
+	for _, in := range logicalInstructions(content) {
 		if suppress.IsIgnoredLine(in.text) {
 			continue
 		}
@@ -120,7 +106,7 @@ func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, er
 		}
 	}
 
-	return findings, err
+	return findings, nil
 }
 
 // newFinding builds a Finding for a raw image reference at the given location.
@@ -137,10 +123,7 @@ func newFinding(raw string, line uint, filePath string) domain.Finding {
 // backslash-continued physical lines and dropping blank and comment lines
 // (including comment lines that appear within a continuation, which Docker
 // strips). Each instruction keeps the line number of its first physical line.
-func logicalInstructions(content []byte) ([]instruction, error) {
-	scanner := bufio.NewScanner(bytes.NewReader(content))
-	scanner.Buffer(make([]byte, maxScanTokenSize), maxScanTokenSize)
-
+func logicalInstructions(content []byte) []instruction {
 	var (
 		out        []instruction
 		cur        strings.Builder
@@ -149,9 +132,9 @@ func logicalInstructions(content []byte) ([]instruction, error) {
 		continuing bool
 	)
 
-	for scanner.Scan() {
+	for raw := range bytes.Lines(content) {
 		lineNum++
-		line := scanner.Text()
+		line := strings.TrimSuffix(strings.TrimSuffix(string(raw), "\n"), "\r")
 		trimmed := strings.TrimSpace(line)
 
 		// Comment lines are dropped whether or not we are mid-continuation.
@@ -184,7 +167,7 @@ func logicalInstructions(content []byte) ([]instruction, error) {
 		out = append(out, instruction{line: startLine, text: strings.TrimSpace(cur.String())})
 	}
 
-	return out, scanner.Err()
+	return out
 }
 
 // parseFrom extracts the image reference and optional stage alias from the
@@ -274,11 +257,9 @@ func unquote(s string) string {
 	return s
 }
 
-// isAllDigits reports whether s is non-empty and consists only of ASCII digits.
+// isAllDigits reports whether s consists only of ASCII digits. Callers
+// must pass a non-empty string.
 func isAllDigits(s string) bool {
-	if s == "" {
-		return false
-	}
 	for _, r := range s {
 		if r < '0' || r > '9' {
 			return false

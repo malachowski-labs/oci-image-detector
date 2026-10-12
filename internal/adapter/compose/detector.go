@@ -8,6 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/malachowski-labs/oci-image-detector/internal/githubpath"
 	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
 	"github.com/malachowski-labs/oci-image-detector/pkg/imageref"
 	"github.com/malachowski-labs/oci-image-detector/pkg/port"
@@ -25,11 +26,8 @@ const mergeKey = "<<"
 // Detector implements port.Detector for Docker Compose files.
 type Detector struct{}
 
-// New returns a new Docker Compose Detector.
-func New() *Detector { return &Detector{} }
-
 // init makes the detector available to every binary that links this package.
-func init() { registry.MustRegister(New()) }
+func init() { registry.MustRegister(&Detector{}) }
 
 // Name implements port.Detector.
 func (d *Detector) Name() string { return string(Strategy) }
@@ -44,13 +42,11 @@ func (d *Detector) Tier() port.Tier { return port.TierSpecialist }
 // .github/workflows/ and .github/actions/: GitHub treats every YAML file there
 // as a workflow or action regardless of its name.
 func (d *Detector) Match(filePath string) bool {
-	lowerPath := strings.ToLower(filePath)
-	if strings.Contains(lowerPath, ".github/workflows/") ||
-		strings.Contains(lowerPath, ".github/actions/") {
+	if githubpath.IsReserved(filePath) {
 		return false
 	}
 
-	lower := path.Base(lowerPath)
+	lower := strings.ToLower(path.Base(filePath))
 	stem, ok := strings.CutSuffix(lower, ".yaml")
 	if !ok {
 		if stem, ok = strings.CutSuffix(lower, ".yml"); !ok {

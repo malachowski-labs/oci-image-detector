@@ -38,12 +38,7 @@ func TestJSONFile_emptyFindings(t *testing.T) {
 }
 
 func TestJSONFile_parsedFinding(t *testing.T) {
-	ref, err := domain.NewParsedImageRef(
-		"ghcr.io/org/app:v1.0.0", "ghcr.io", "org/app", "v1.0.0", "",
-	)
-	if err != nil {
-		t.Fatalf("NewParsedImageRef: %v", err)
-	}
+	ref := domain.NewParsedImageRef("ghcr.io/org/app:v1.0.0", "ghcr.io", "org/app", "v1.0.0", "")
 	findings := []domain.Finding{
 		{
 			Ref:      ref,
@@ -168,11 +163,4 @@ func TestJSONFile_endsWithNewline(t *testing.T) {
 	if len(data) == 0 || data[len(data)-1] != '\n' {
 		t.Errorf("file should end with newline, got: %q", string(data[max(0, len(data)-5):]))
 	}
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
