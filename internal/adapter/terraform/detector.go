@@ -16,8 +16,8 @@ import (
 	"io/fs"
 	"strings"
 
-	"github.com/malachowski-labs/oci-image-detector/internal/domain"
-	"github.com/malachowski-labs/oci-image-detector/internal/registry"
+	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/registry"
 )
 
 // Strategy is the stable identifier for findings resolved from Terraform source.

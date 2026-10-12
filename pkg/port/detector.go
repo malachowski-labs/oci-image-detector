@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 
-	"github.com/malachowski-labs/oci-image-detector/internal/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
 )
 
 // Tier is the priority class a Detector declares for itself. It replaces

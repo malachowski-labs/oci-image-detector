@@ -8,7 +8,7 @@ import (
 	"testing/fstest"
 
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/terraform"
-	"github.com/malachowski-labs/oci-image-detector/internal/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
 )
 
 func TestDetector_MatchDir(t *testing.T) {

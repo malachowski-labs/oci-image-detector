@@ -9,7 +9,7 @@ import (
 	"github.com/zclconf/go-cty/cty/convert"
 
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/imageref"
-	"github.com/malachowski-labs/oci-image-detector/internal/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
 )
 
 // maxFindingsPerAttr caps the findings a single attribute may produce.

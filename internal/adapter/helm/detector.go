@@ -9,9 +9,9 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/imageref"
-	"github.com/malachowski-labs/oci-image-detector/internal/domain"
-	"github.com/malachowski-labs/oci-image-detector/internal/port"
-	"github.com/malachowski-labs/oci-image-detector/internal/registry"
+	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/port"
+	"github.com/malachowski-labs/oci-image-detector/pkg/registry"
 )
 
 // Strategy is the stable identifier for this detection strategy.

@@ -10,8 +10,8 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"go.uber.org/zap"
 
-	"github.com/malachowski-labs/oci-image-detector/internal/domain"
-	"github.com/malachowski-labs/oci-image-detector/internal/port"
+	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/port"
 )
 
 // Compile-time check that *ScanService satisfies port.Scanner.
@@ -30,7 +30,7 @@ type ScanService struct {
 // detectors handles individual files; dirDetectors handles whole directories
 // (e.g. Terraform, which needs cross-file variable resolution).
 // Both slices are consulted in the order given and the first match wins;
-// internal/registry produces that order from each detector's declared tier.
+// pkg/registry produces that order from each detector's declared tier.
 func NewScanService(
 	detectors []port.Detector,
 	dirDetectors []port.DirectoryAwareDetector,

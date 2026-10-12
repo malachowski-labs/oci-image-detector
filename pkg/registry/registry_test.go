@@ -8,9 +8,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/malachowski-labs/oci-image-detector/internal/domain"
-	"github.com/malachowski-labs/oci-image-detector/internal/port"
-	"github.com/malachowski-labs/oci-image-detector/internal/registry"
+	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/port"
+	"github.com/malachowski-labs/oci-image-detector/pkg/registry"
 )
 
 // --- test doubles ---

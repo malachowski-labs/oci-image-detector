@@ -3,7 +3,7 @@ package service
 import (
 	"sort"
 
-	"github.com/malachowski-labs/oci-image-detector/internal/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
 )
 
 // sortFindings sorts findings in-place by FilePath → Line → Raw.
