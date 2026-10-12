@@ -57,6 +57,7 @@ oci-image-detector [flags]
 | `--directory` | `-d` | `.` | Root directory to scan |
 | `--exclude` | `-e` | — | Glob pattern to exclude (repeatable, doublestar syntax). Always-excluded: `.git/**`, `go.sum` |
 | `--exclude-images` | | — | Glob pattern matched against the image reference as written in the source to drop findings (repeatable, doublestar syntax, e.g. `localhost:5000/**`) |
+| `--disable-detector` | | — | Detector to turn off by name (repeatable). See [Disabling detectors](#disabling-detectors) |
 | `--output-file` | `-o` | — | Write findings as JSON to this file (in addition to stdout) |
 | `--allow-empty` | | `false` | Exit 0 when no image references are found |
 | `--verbose` | `-v` | `false` | Enable debug logging on stderr |
@@ -170,6 +171,7 @@ The action runs the same Docker image used locally — no extra permissions requ
 | `directory` | `.` | Root directory to scan (relative to repo root) |
 | `exclude` | `''` | Newline-separated doublestar glob patterns to exclude |
 | `exclude-images` | `''` | Newline-separated doublestar glob patterns matched against the image reference as written in the source (e.g. `localhost:5000/**`) |
+| `disable-detector` | `''` | Newline-separated names of detectors to turn off. See [Disabling detectors](#disabling-detectors) |
 | `allow-empty` | `false` | Exit 0 when no image references are found |
 | `verbose` | `false` | Enable debug logging |
 
@@ -285,6 +287,32 @@ oci-image-detector \
 ```
 
 ---
+
+## Disabling detectors
+
+Each detector can be turned off by name: `dockerfile`, `generic`, `githubactions`, `helm`, `terraform`. An unknown name is an error, so a typo cannot leave a detector on by accident.
+
+The flag and the action input are available in releases after `v1.4.0`.
+
+**CLI:**
+
+```sh
+oci-image-detector \
+  --disable-detector generic \
+  --disable-detector helm
+```
+
+**GitHub Action:**
+
+```yaml
+- uses: malachowski-labs/oci-image-detector@<version>
+  with:
+    disable-detector: |
+      generic
+      helm
+```
+
+Disabling a detector does not exclude its files. With `dockerfile` off, a Dockerfile is no longer parsed as one, but the `generic` detector still scans it as plain text and reports the fully-qualified references it finds. To skip files altogether, use `--exclude`.
 
 ## Custom detectors
 

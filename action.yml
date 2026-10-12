@@ -28,6 +28,11 @@ inputs:
     required: false
     default: ''
 
+  disable-detector:
+    description: Newline-separated names of detectors to turn off (e.g. "generic\nhelm"). Requires an image version that supports --disable-detector.
+    required: false
+    default: ''
+
   allow-empty:
     description: Exit 0 when no image references are found (default "false").
     required: false
@@ -58,6 +63,7 @@ runs:
         INPUT_DIRECTORY:   ${{ inputs.directory }}
         INPUT_EXCLUDE:        ${{ inputs.exclude }}
         INPUT_EXCLUDE_IMAGES: ${{ inputs.exclude-images }}
+        INPUT_DISABLE_DETECTOR: ${{ inputs.disable-detector }}
         INPUT_ALLOW_EMPTY:    ${{ inputs.allow-empty }}
         INPUT_VERBOSE:        ${{ inputs.verbose }}
       run: |
@@ -87,6 +93,11 @@ runs:
           [[ -z "$pattern" ]] && continue
           ARGS+=(--exclude-images "$pattern")
         done <<< "$INPUT_EXCLUDE_IMAGES"
+
+        while IFS= read -r detector; do
+          [[ -z "$detector" ]] && continue
+          ARGS+=(--disable-detector "$detector")
+        done <<< "$INPUT_DISABLE_DETECTOR"
 
         [[ "$INPUT_ALLOW_EMPTY" == "true" ]] && ARGS+=(--allow-empty)
         [[ "$INPUT_VERBOSE"     == "true" ]] && ARGS+=(--verbose)

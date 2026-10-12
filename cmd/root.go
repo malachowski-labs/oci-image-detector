@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -40,6 +41,7 @@ type options struct {
 	directory     string
 	exclude       []string
 	excludeImages []string
+	disable       []string
 	outputFile    string
 	verbose       bool
 	allowEmpty    bool
@@ -91,6 +93,8 @@ Exit codes:
 		"Glob pattern to exclude (repeatable, doublestar syntax, e.g. 'vendor/**')")
 	f.StringArrayVar(&opts.excludeImages, "exclude-images", nil,
 		"Glob pattern to exclude by image reference (repeatable, doublestar syntax, e.g. 'localhost:5000/**')")
+	f.StringArrayVar(&opts.disable, "disable-detector", nil,
+		"Detector to turn off by name (repeatable; available: "+strings.Join(registry.Default().Names(), ", ")+")")
 	f.StringVarP(&opts.outputFile, "output-file", "o", "",
 		"Write findings as JSON to this file (in addition to stdout)")
 	f.BoolVarP(&opts.verbose, "verbose", "v", false, "Enable debug logging on stderr")
@@ -111,7 +115,11 @@ func run(ctx context.Context, opts options) error {
 	defer cancel()
 
 	// Detectors register themselves; see detectors.go for the built-in set.
-	detectors := registry.Default()
+	detectors, err := registry.Default().Without(opts.disable...)
+	if err != nil {
+		return fmt.Errorf("disable-detector: %w (available: %s)",
+			err, strings.Join(registry.Default().Names(), ", "))
+	}
 	scanner := service.NewScanService(detectors.Detectors(), detectors.DirDetectors(), log)
 
 	findings, err := scanner.Scan(ctx, opts.directory, port.ScanOptions{

@@ -30,6 +30,10 @@ var ErrDuplicateName = errors.New("registry: duplicate detector name")
 // not know how to order.
 var ErrUnknownTier = errors.New("registry: unknown detector tier")
 
+// ErrUnknownDetector is returned when a detector is referred to by a name that
+// was never registered.
+var ErrUnknownDetector = errors.New("registry: unknown detector")
+
 // Registry holds the registered detectors. The zero value is not usable; build
 // one with New. A Registry is not safe for concurrent use.
 type Registry struct {
@@ -122,6 +126,42 @@ func (r *Registry) DirDetectors() []port.DirectoryAwareDetector {
 		return cmp.Compare(a.Name(), b.Name())
 	})
 	return out
+}
+
+// Names returns the names of all registered detectors, of both kinds, sorted.
+func (r *Registry) Names() []string {
+	out := make([]string, 0, len(r.names))
+	for name := range r.names {
+		out = append(out, name)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// Without returns a new Registry holding every detector of r except the named
+// ones; r itself is left untouched. Naming a detector that is not registered is
+// an error rather than a no-op, so a typo cannot silently leave a detector on.
+func (r *Registry) Without(names ...string) (*Registry, error) {
+	for _, name := range names {
+		if _, known := r.names[name]; !known {
+			return nil, fmt.Errorf("%w: %q", ErrUnknownDetector, name)
+		}
+	}
+
+	out := New()
+	for _, d := range r.detectors {
+		if !slices.Contains(names, d.Name()) {
+			out.detectors = append(out.detectors, d)
+			out.names[d.Name()] = struct{}{}
+		}
+	}
+	for _, d := range r.dirDetectors {
+		if !slices.Contains(names, d.Name()) {
+			out.dirDetectors = append(out.dirDetectors, d)
+			out.names[d.Name()] = struct{}{}
+		}
+	}
+	return out, nil
 }
 
 // isNil reports whether d is a nil interface or an interface holding a nil
