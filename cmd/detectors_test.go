@@ -72,6 +72,8 @@ func TestBuiltinDetectors_specialistsDoNotOverlap(t *testing.T) {
 		{path: "build/app.dockerfile", want: "dockerfile"},
 		{path: "values.yaml", want: "helm"},
 		{path: "charts/app/values.yml", want: "helm"},
+		{path: "charts/app/values-prod.yaml", want: "helm"},
+		{path: "env/prod-values.yml", want: "helm"},
 		{path: ".github/workflows/ci.yml", want: "githubactions"},
 		{path: ".github/actions/build/action.yaml", want: "githubactions"},
 		// GitHub treats these as workflows and actions regardless of their name.

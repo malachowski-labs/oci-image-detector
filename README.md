@@ -5,7 +5,7 @@ A production-ready CLI tool and GitHub Action that **recursively scans a directo
 | File type | Pattern |
 |---|---|
 | `Dockerfile` / `Containerfile` | `FROM` instructions (incl. `--platform`, `AS` aliases, `scratch`) |
-| Helm `values.yaml` / `values-*.yaml` | `registry` + `repository` + `tag` fields |
+| Helm `values.yaml` and per-environment variants (`values-*.yaml`, `values.*.yaml`, `*-values.yaml`, `*.values.yaml`, incl. `.yml`) | `registry` + `repository` + `tag` / `digest` blocks and pinned strings (`image: nginx:1.25`) under image-shaped keys, incl. short forms; fully-qualified references in any other value |
 | Docker Compose `compose.yaml` / `docker-compose.yaml` (incl. `.yml` and `compose.<suffix>.yaml` overrides) | `services.<name>.image`, incl. images shared through YAML anchors and merge keys |
 | Kubernetes manifests: any `*.yaml` / `*.yml` with an `apiVersion` and `kind` | `image` of every `containers` / `initContainers` / `ephemeralContainers` entry, incl. short forms; fully-qualified references in any other value |
 | Terraform `*.tf` | `image` / `container` / `source` variable defaults, locals, and resource arguments |
@@ -235,7 +235,7 @@ Add `oci-image-detector:ignore` in a comment next to the image reference. Where 
 |---|---|
 | Any text file | Anywhere on the line holding the reference |
 | Terraform | On the first line of the attribute, even when the literal sits on a later line of a multi-line expression |
-| Helm values | YAML comment on any line of the image block (`registry:`, `repository:`, `tag:` or `digest:`) |
+| Helm values | YAML comment on any line of the image block (`registry:`, `repository:`, `tag:` or `digest:`), or on the value holding the reference |
 | GitHub Actions | YAML comment on the `uses:` / `image:` / `container:` value itself |
 | Docker Compose | YAML comment on the `image:` value itself |
 | Kubernetes | YAML comment on the value holding the reference, or on the reference's own line inside a block scalar |
