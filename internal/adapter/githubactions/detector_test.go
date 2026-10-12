@@ -176,6 +176,43 @@ jobs:
 			wantRaws: nil,
 		},
 		{
+			name: "fully-qualified references outside image fields",
+			content: `
+env:
+  TOOLS_IMAGE: ghcr.io/org/tools:v4
+jobs:
+  test:
+    container: node:18
+    steps:
+      - run: |
+          docker pull quay.io/org/app:v2
+          docker pull redis:7
+      - uses: org/deploy@v1
+        with:
+          image: registry.example.com/org/job:v3
+          args: ["--base", "gcr.io/org/base:v1"]
+`,
+			wantRaws: []string{
+				"ghcr.io/org/tools:v4",
+				"node:18",
+				"quay.io/org/app:v2",
+				"registry.example.com/org/job:v3",
+				"gcr.io/org/base:v1",
+			},
+		},
+		{
+			name: "ignore annotation suppresses a line of a run script",
+			content: `
+jobs:
+  test:
+    steps:
+      - run: |
+          docker pull quay.io/org/app:v2  # oci-image-detector:ignore
+          docker pull quay.io/org/other:v1
+`,
+			wantRaws: []string{"quay.io/org/other:v1"},
+		},
+		{
 			name:     "empty file",
 			content:  "",
 			wantRaws: nil,
@@ -200,5 +237,20 @@ jobs:
 				}
 			}
 		})
+	}
+}
+
+func TestDetector_Detect_line(t *testing.T) {
+	content := "jobs:\n  test:\n    steps:\n      - run: |\n          echo start\n          docker pull quay.io/org/app:v2\n"
+
+	findings, err := (&githubactions.Detector{}).Detect(".github/workflows/ci.yml", []byte(content))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("got %d findings, want 1: %v", len(findings), findings)
+	}
+	if findings[0].Line != 6 {
+		t.Errorf("Line = %d, want 6", findings[0].Line)
 	}
 }

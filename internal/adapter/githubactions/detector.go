@@ -8,6 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/malachowski-labs/oci-image-detector/internal/githubpath"
+	"github.com/malachowski-labs/oci-image-detector/internal/yamlscan"
 	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
 	"github.com/malachowski-labs/oci-image-detector/pkg/imageref"
 	"github.com/malachowski-labs/oci-image-detector/pkg/port"
@@ -46,14 +47,24 @@ func (d *Detector) Match(filePath string) bool {
 //   - Step uses fields with the docker:// prefix (e.g. uses: docker://alpine:3.12)
 //   - Job-level container images (container.image or the shorthand container: image)
 //   - Service container images (services.<name>.image)
+//
+// Every other string of the file, keys included, is scanned with the strict
+// imageref.Candidates filter, so fully-qualified references in run scripts,
+// env values or action inputs are still found.
 func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, error) {
 	var root yaml.Node
 	if err := yaml.Unmarshal(content, &root); err != nil {
 		return nil, fmt.Errorf("githubactions: parse %q: %w", filePath, err)
 	}
-	var findings []domain.Finding
-	walkNode(&root, "", filePath, &findings)
-	return findings, nil
+	w := walker{filePath: filePath}
+	w.walk(&root, "")
+	return w.findings, nil
+}
+
+// walker collects the findings of one workflow or action file.
+type walker struct {
+	filePath string
+	findings []domain.Finding
 }
 
 // serviceEntry is the parentKey handed to the entries of a "services" mapping.
@@ -61,26 +72,28 @@ func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, er
 // this marker to recognise the "image" key of each service block.
 const serviceEntry = "service"
 
-// walkNode recursively walks a yaml.Node collecting OCI image findings.
+// walk visits node and everything below it.
 // parentKey is the mapping key under which this node sits, or "" at the
 // document root.
-func walkNode(node *yaml.Node, parentKey, filePath string, findings *[]domain.Finding) {
+func (w *walker) walk(node *yaml.Node, parentKey string) {
 	switch node.Kind {
 	case yaml.DocumentNode:
 		for _, c := range node.Content {
-			walkNode(c, "", filePath, findings)
+			w.walk(c, "")
 		}
 
 	case yaml.MappingNode:
 		for i := 0; i+1 < len(node.Content); i += 2 {
 			key, val := node.Content[i].Value, node.Content[i+1]
+			// Keys are text too: a reference used as a mapping key is reported.
+			yamlscan.Scalar(node.Content[i], w.report)
 
 			if val.Kind != yaml.ScalarNode {
 				childKey := key
 				if parentKey == "services" {
 					childKey = serviceEntry
 				}
-				walkNode(val, childKey, filePath, findings)
+				w.walk(val, childKey)
 				continue
 			}
 
@@ -89,22 +102,32 @@ func walkNode(node *yaml.Node, parentKey, filePath string, findings *[]domain.Fi
 				continue
 			}
 			raw, ok := imageValue(key, parentKey, val.Value)
-			if !ok || suppress.IsIgnoredLine(val.LineComment) {
+			if !ok {
+				yamlscan.Scalar(val, w.report)
 				continue
 			}
-			*findings = append(*findings, domain.Finding{
-				Ref:      imageref.Parse(raw),
-				FilePath: filePath,
-				Line:     uint(val.Line),
-				Strategy: Strategy,
-			})
+			if !suppress.IsIgnoredLine(val.LineComment) {
+				w.report(imageref.Parse(raw), val.Line)
+			}
 		}
 
 	case yaml.SequenceNode:
 		for _, c := range node.Content {
-			walkNode(c, parentKey, filePath, findings)
+			w.walk(c, parentKey)
 		}
+
+	case yaml.ScalarNode:
+		yamlscan.Scalar(node, w.report)
 	}
+}
+
+func (w *walker) report(ref domain.ImageRef, line int) {
+	w.findings = append(w.findings, domain.Finding{
+		Ref:      ref,
+		FilePath: w.filePath,
+		Line:     uint(line),
+		Strategy: Strategy,
+	})
 }
 
 // imageValue returns the image reference a scalar mapping entry names, if any.

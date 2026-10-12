@@ -9,6 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/malachowski-labs/oci-image-detector/internal/githubpath"
+	"github.com/malachowski-labs/oci-image-detector/internal/yamlscan"
 	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
 	"github.com/malachowski-labs/oci-image-detector/pkg/imageref"
 	"github.com/malachowski-labs/oci-image-detector/pkg/port"
@@ -61,16 +62,21 @@ func (d *Detector) Match(filePath string) bool {
 // Detect implements port.Detector.
 //
 // It reports the image of every service, i.e. the services.<name>.image
-// scalars, and nothing else: an "image" key anywhere else in the file is not a
-// service image. The field is unambiguous, so short forms ("nginx:1.25") and
-// tag-less references ("nginx") are reported as written.
+// scalars: an "image" key anywhere else in the file is not a service image.
+// The field is unambiguous, so short forms ("nginx:1.25") and tag-less
+// references ("nginx") are reported as written.
+//
+// Every other string of the file, keys included, is scanned with the strict
+// imageref.Candidates filter, so fully-qualified references in environment
+// values, commands, build arguments or extension fields are still found.
 //
 // Compose interpolation ("${TAG}", "${TAG:-1.25}") is not resolved; such
 // references surface as raw, unparsed findings.
 //
 // Aliases and merge keys are followed, so a service that takes its image from
 // a shared anchor (typically an "x-" extension field) is covered. Such an image
-// is reported once, at the line where it is written.
+// is reported once, at the line where it is written. The scan of the other
+// strings does not follow aliases: a value is reported where it is written.
 func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, error) {
 	var root yaml.Node
 	if err := yaml.Unmarshal(content, &root); err != nil {
@@ -80,33 +86,66 @@ func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, er
 		return nil, nil // empty file
 	}
 
-	services := mapValue(resolve(root.Content[0]), "services")
-	if services == nil || services.Kind != yaml.MappingNode {
-		return nil, nil
-	}
-
 	var findings []domain.Finding
-	seen := map[*yaml.Node]bool{} // image nodes shared through an anchor
-
-	for i := 0; i+1 < len(services.Content); i += 2 {
-		image := mapValue(resolve(services.Content[i+1]), "image")
-		if image == nil || !isImageValue(image) || seen[image] {
-			continue
-		}
-		seen[image] = true
-
-		if suppress.IsIgnoredLine(image.LineComment) {
-			continue
-		}
+	report := func(ref domain.ImageRef, line int) {
 		findings = append(findings, domain.Finding{
-			Ref:      imageref.Parse(image.Value),
+			Ref:      ref,
 			FilePath: filePath,
-			Line:     uint(image.Line),
+			Line:     uint(line),
 			Strategy: Strategy,
 		})
 	}
 
+	// Service image nodes: one shared through an anchor is reported once, and
+	// none of them is scanned again as text.
+	seen := map[*yaml.Node]bool{}
+	for _, image := range serviceImages(resolve(root.Content[0])) {
+		if seen[image] {
+			continue
+		}
+		seen[image] = true
+
+		if !suppress.IsIgnoredLine(image.LineComment) {
+			report(imageref.Parse(image.Value), image.Line)
+		}
+	}
+
+	scanText(&root, seen, report)
 	return findings, nil
+}
+
+// serviceImages returns the image node of every service of the document, in
+// file order. Services that share an image through an anchor yield the same
+// node.
+func serviceImages(doc *yaml.Node) []*yaml.Node {
+	services := mapValue(doc, "services")
+	if services == nil || services.Kind != yaml.MappingNode {
+		return nil
+	}
+
+	var images []*yaml.Node
+	for i := 0; i+1 < len(services.Content); i += 2 {
+		image := mapValue(resolve(services.Content[i+1]), "image")
+		if image != nil && isImageValue(image) {
+			images = append(images, image)
+		}
+	}
+	return images
+}
+
+// scanText reports the fully-qualified references in every key and value at
+// or below node, except the nodes in skip.
+func scanText(node *yaml.Node, skip map[*yaml.Node]bool, report func(ref domain.ImageRef, line int)) {
+	if skip[node] {
+		return
+	}
+	if node.Kind == yaml.ScalarNode {
+		yamlscan.Scalar(node, report)
+		return
+	}
+	for _, child := range node.Content {
+		scanText(child, skip, report)
+	}
 }
 
 // isImageValue reports whether node is a non-empty scalar. An explicit null

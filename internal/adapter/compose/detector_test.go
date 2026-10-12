@@ -176,7 +176,7 @@ services:
 			name: "own image wins over a merged one",
 			content: `
 x-base: &base
-  image: ghcr.io/org/app:v2
+  image: org/app:v2
 services:
   api:
     <<: *base
@@ -227,6 +227,60 @@ services:
     image: postgres:16
 `,
 			wantRaws: []string{"postgres:16"},
+		},
+		{
+			name: "fully-qualified references outside service images",
+			content: `
+x-tools: ghcr.io/org/tools:v4
+services:
+  web:
+    image: nginx:1.25
+    environment:
+      SIDECAR_IMAGE: quay.io/org/sidecar:v2
+      SHORT_IMAGE: redis:7
+    command: ["run", "--image=registry.example.com/org/job:v3"]
+    build:
+      args:
+        BASE: gcr.io/org/base:v1
+`,
+			wantRaws: []string{
+				"nginx:1.25",
+				"ghcr.io/org/tools:v4",
+				"quay.io/org/sidecar:v2",
+				"registry.example.com/org/job:v3",
+				"gcr.io/org/base:v1",
+			},
+		},
+		{
+			name: "fully-qualified reference no service uses",
+			content: `
+x-base: &base
+  image: ghcr.io/org/app:v2
+services:
+  api:
+    <<: *base
+    image: ghcr.io/org/api:v3
+`,
+			wantRaws: []string{"ghcr.io/org/api:v3", "ghcr.io/org/app:v2"},
+		},
+		{
+			name: "fully-qualified reference in a file without services",
+			content: `
+x-base:
+  image: ghcr.io/org/app:v2
+`,
+			wantRaws: []string{"ghcr.io/org/app:v2"},
+		},
+		{
+			name: "ignore annotation suppresses a reference outside service images",
+			content: `
+services:
+  web:
+    image: nginx:1.25
+    environment:
+      SIDECAR_IMAGE: quay.io/org/sidecar:v2  # oci-image-detector:ignore
+`,
+			wantRaws: []string{"nginx:1.25"},
 		},
 		{
 			name: "services is not a mapping",
