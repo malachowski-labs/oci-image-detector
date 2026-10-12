@@ -274,11 +274,9 @@ func unquote(s string) string {
 	return s
 }
 
-// isAllDigits reports whether s is non-empty and consists only of ASCII digits.
+// isAllDigits reports whether s consists only of ASCII digits. Callers
+// must pass a non-empty string.
 func isAllDigits(s string) bool {
-	if s == "" {
-		return false
-	}
 	for _, r := range s {
 		if r < '0' || r > '9' {
 			return false

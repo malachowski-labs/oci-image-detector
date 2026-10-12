@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"slices"
 	"strings"
 
 	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
@@ -34,6 +35,21 @@ func init() { registry.MustRegisterDir(New()) }
 
 // Name implements port.DirectoryAwareDetector.
 func (d *Detector) Name() string { return string(Strategy) }
+
+// ownedExtensions lists the file extensions of the Terraform sources this
+// detector reads.
+var ownedExtensions = []string{".tf", ".tfvars"}
+
+// Owns implements port.DirectoryAwareDetector.
+// Returns true for .tf and .tfvars files, case-insensitively. A .tfvars file
+// is owned even in a directory without .tf files: on its own it assigns
+// variables nothing consumes, so it is not scanned at all.
+func (d *Detector) Owns(filePath string) bool {
+	lower := strings.ToLower(filePath)
+	return slices.ContainsFunc(ownedExtensions, func(ext string) bool {
+		return strings.HasSuffix(lower, ext)
+	})
+}
 
 // MatchDir implements port.DirectoryAwareDetector.
 // Returns true when the directory contains at least one .tf file.

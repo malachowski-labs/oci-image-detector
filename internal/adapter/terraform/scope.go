@@ -143,29 +143,38 @@ func newScope(dir fs.FS, entries []fs.DirEntry, files []parsedFile) (*scope, []e
 	}
 
 	for _, f := range files {
-		if f.body == nil {
-			continue
+		if f.body != nil {
+			sc.define(f)
 		}
-		for _, block := range f.body.Blocks {
-			switch {
-			case block.Type == "variable" && len(block.Labels) == 1:
-				// Only the default is read; type/description/validation are
-				// not evaluable expressions.
-				if def, ok := block.Body.Attributes["default"]; ok {
-					sc.setVar(block.Labels[0], def, f.lines)
-				}
-			case block.Type == "locals":
-				for name, attr := range block.Body.Attributes {
-					if !spansIgnoredLine(f.lines, attr.SrcRange) {
-						sc.locals[name] = &local{expr: attr.Expr}
-					}
+	}
+	return sc, sc.applyTFVars(dir, entries)
+}
+
+// define records the variable defaults and locals declared in one .tf file.
+func (sc *scope) define(f parsedFile) {
+	for _, block := range f.body.Blocks {
+		switch {
+		case block.Type == "variable" && len(block.Labels) == 1:
+			// Only the default is read; type/description/validation are
+			// not evaluable expressions.
+			if def, ok := block.Body.Attributes["default"]; ok {
+				sc.setVar(block.Labels[0], def, f.lines)
+			}
+		case block.Type == "locals":
+			for name, attr := range block.Body.Attributes {
+				if !spansIgnoredLine(f.lines, attr.SrcRange) {
+					sc.locals[name] = &local{expr: attr.Expr}
 				}
 			}
 		}
 	}
+}
 
-	// .tfvars assignments override variable defaults. Files are applied in
-	// directory order, so a later file wins over an earlier one.
+// applyTFVars overrides variable defaults with the assignments of the
+// directory's .tfvars files. Files are applied in directory order, so a later
+// file wins over an earlier one. Errors reading or parsing a file are
+// returned; whatever could be parsed from it is still applied.
+func (sc *scope) applyTFVars(dir fs.FS, entries []fs.DirEntry) []error {
 	var errs []error
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".tfvars") {
@@ -182,7 +191,7 @@ func newScope(dir fs.FS, entries []fs.DirEntry, files []parsedFile) (*scope, []e
 			sc.setVar(name, attr, f.lines)
 		}
 	}
-	return sc, errs
+	return errs
 }
 
 // setVar records a variable value from a default or .tfvars attribute. A

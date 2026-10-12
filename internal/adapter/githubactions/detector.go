@@ -7,6 +7,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/malachowski-labs/oci-image-detector/internal/githubpath"
 	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
 	"github.com/malachowski-labs/oci-image-detector/pkg/imageref"
 	"github.com/malachowski-labs/oci-image-detector/pkg/port"
@@ -39,8 +40,7 @@ func (d *Detector) Match(filePath string) bool {
 	if !strings.HasSuffix(lower, ".yml") && !strings.HasSuffix(lower, ".yaml") {
 		return false
 	}
-	return strings.Contains(lower, ".github/workflows/") ||
-		strings.Contains(lower, ".github/actions/")
+	return githubpath.IsReserved(filePath)
 }
 
 // Detect implements port.Detector.
@@ -54,18 +54,19 @@ func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, er
 	if err := yaml.Unmarshal(content, &root); err != nil {
 		return nil, fmt.Errorf("githubactions: parse %q: %w", filePath, err)
 	}
-	if root.Kind == 0 {
-		return nil, nil
-	}
 	var findings []domain.Finding
 	walkNode(&root, "", filePath, &findings)
 	return findings, nil
 }
 
+// serviceEntry is the parentKey handed to the entries of a "services" mapping.
+// Their own keys are user-chosen service names, so the walk replaces them with
+// this marker to recognise the "image" key of each service block.
+const serviceEntry = "service"
+
 // walkNode recursively walks a yaml.Node collecting OCI image findings.
 // parentKey is the mapping key under which this node sits, or "" at the
-// document root. Nodes under a "services" mapping pass "service" as parentKey
-// so that each named service block's "image" key is recognised.
+// document root.
 func walkNode(node *yaml.Node, parentKey, filePath string, findings *[]domain.Finding) {
 	switch node.Kind {
 	case yaml.DocumentNode:
@@ -75,43 +76,31 @@ func walkNode(node *yaml.Node, parentKey, filePath string, findings *[]domain.Fi
 
 	case yaml.MappingNode:
 		for i := 0; i+1 < len(node.Content); i += 2 {
-			key := node.Content[i].Value
-			val := node.Content[i+1]
+			key, val := node.Content[i].Value, node.Content[i+1]
 
-			// Step: uses: docker://image:tag
-			if key == "uses" && val.Kind == yaml.ScalarNode {
-				if !suppress.IsIgnoredLine(val.LineComment) {
-					if raw, ok := stripDockerScheme(val.Value); ok {
-						*findings = append(*findings, newFinding(raw, uint(val.Line), filePath))
-					}
+			if val.Kind != yaml.ScalarNode {
+				childKey := key
+				if parentKey == "services" {
+					childKey = serviceEntry
 				}
+				walkNode(val, childKey, filePath, findings)
 				continue
 			}
 
-			// Job-level container shorthand: container: image:tag (scalar form)
-			if key == "container" && val.Kind == yaml.ScalarNode {
-				if !suppress.IsIgnoredLine(val.LineComment) {
-					*findings = append(*findings, newFinding(val.Value, uint(val.Line), filePath))
-				}
+			// An empty or null value ("container:", "image: ~") names no image.
+			if val.Tag == "!!null" || val.Value == "" {
 				continue
 			}
-
-			// image: within a container or service block
-			if key == "image" && val.Kind == yaml.ScalarNode &&
-				(parentKey == "container" || parentKey == "service") {
-				if !suppress.IsIgnoredLine(val.LineComment) {
-					*findings = append(*findings, newFinding(val.Value, uint(val.Line), filePath))
-				}
+			raw, ok := imageValue(key, parentKey, val.Value)
+			if !ok || suppress.IsIgnoredLine(val.LineComment) {
 				continue
 			}
-
-			// Recurse. Service entries (keys directly under a "services" mapping)
-			// pass "service" as parentKey so their image: child is recognised.
-			childCtx := key
-			if parentKey == "services" {
-				childCtx = "service"
-			}
-			walkNode(val, childCtx, filePath, findings)
+			*findings = append(*findings, domain.Finding{
+				Ref:      imageref.Parse(raw),
+				FilePath: filePath,
+				Line:     uint(val.Line),
+				Strategy: Strategy,
+			})
 		}
 
 	case yaml.SequenceNode:
@@ -119,6 +108,23 @@ func walkNode(node *yaml.Node, parentKey, filePath string, findings *[]domain.Fi
 			walkNode(c, parentKey, filePath, findings)
 		}
 	}
+}
+
+// imageValue returns the image reference a scalar mapping entry names, if any.
+// key is the entry's own key and parentKey the key of the mapping holding it.
+func imageValue(key, parentKey, value string) (string, bool) {
+	switch {
+	case key == "uses":
+		// Step: uses: docker://image:tag
+		return stripDockerScheme(value)
+	case key == "container":
+		// Job-level container shorthand: container: image:tag
+		return value, true
+	case key == "image" && (parentKey == "container" || parentKey == serviceEntry):
+		// image: within a container or service block
+		return value, true
+	}
+	return "", false
 }
 
 // stripDockerScheme removes the "docker://" prefix from a step "uses" value.
@@ -129,13 +135,4 @@ func stripDockerScheme(uses string) (string, bool) {
 		return "", false
 	}
 	return raw, true
-}
-
-func newFinding(raw string, line uint, filePath string) domain.Finding {
-	return domain.Finding{
-		Ref:      imageref.Parse(raw),
-		FilePath: filePath,
-		Line:     line,
-		Strategy: Strategy,
-	}
 }

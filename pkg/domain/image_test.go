@@ -54,7 +54,7 @@ func TestImageRef_String(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ref := domain.NewImageRef(tc.raw)
-			if got := ref.String(); got != tc.raw {
+			if got := ref.Raw; got != tc.raw {
 				t.Errorf("String() = %q, want %q", got, tc.raw)
 			}
 		})
@@ -74,22 +74,22 @@ func TestImageRef_Canonical(t *testing.T) {
 		},
 		{
 			name: "tag reference",
-			ref: mustParsed(t, "nginx:1.25", "index.docker.io", "library/nginx", "1.25", ""),
+			ref:  mustParsed(t, "nginx:1.25", "index.docker.io", "library/nginx", "1.25", ""),
 			want: "index.docker.io/library/nginx:1.25",
 		},
 		{
 			name: "implicit latest tag",
-			ref: mustParsed(t, "nginx", "index.docker.io", "library/nginx", "", ""),
+			ref:  mustParsed(t, "nginx", "index.docker.io", "library/nginx", "", ""),
 			want: "index.docker.io/library/nginx:latest",
 		},
 		{
 			name: "digest reference",
-			ref: mustParsed(t, "ghcr.io/org/app@sha256:abc123", "ghcr.io", "org/app", "", "sha256:abc123"),
+			ref:  mustParsed(t, "ghcr.io/org/app@sha256:abc123", "ghcr.io", "org/app", "", "sha256:abc123"),
 			want: "ghcr.io/org/app@sha256:abc123",
 		},
 		{
 			name: "digest takes precedence over tag",
-			ref: mustParsed(t, "ghcr.io/org/app:v1@sha256:abc123", "ghcr.io", "org/app", "v1", "sha256:abc123"),
+			ref:  mustParsed(t, "ghcr.io/org/app:v1@sha256:abc123", "ghcr.io", "org/app", "v1", "sha256:abc123"),
 			want: "ghcr.io/org/app@sha256:abc123",
 		},
 	}

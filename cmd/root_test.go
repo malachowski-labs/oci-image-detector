@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,5 +61,20 @@ func TestDisableDetector_unknownName(t *testing.T) {
 	_, err := runScan(t, "--disable-detector", "no-such-detector")
 	if !errors.Is(err, registry.ErrUnknownDetector) {
 		t.Errorf("error = %v, want %v", err, registry.ErrUnknownDetector)
+	}
+}
+
+func TestReportError_failsTheCommand(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM ghcr.io/org/app:v1\n"), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	// The parent directory of the report does not exist, so it cannot be written.
+	report := filepath.Join(t.TempDir(), "missing", "findings.json")
+
+	cmd := newRootCmd("test")
+	cmd.SetArgs([]string{"--directory", dir, "--output-file", report})
+	if err := cmd.Execute(); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("error = %v, want one wrapping %v", err, fs.ErrNotExist)
 	}
 }

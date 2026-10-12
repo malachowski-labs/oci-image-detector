@@ -1,8 +1,7 @@
 // Package port defines the interfaces that form the boundaries of the
 // application's hexagonal architecture.
 //
-// Driving ports (input) are called by the CLI adapter to trigger use-cases.
-// Driven ports (output) are implemented by adapters and injected into services.
+// The ports are implemented by adapters and injected into the scan service.
 package port
 
 import (
@@ -82,10 +81,11 @@ type Detector interface {
 // DirectoryAwareDetectors declare no Tier: they are always consulted before
 // file-level Detectors, and there is no fallback notion for directories.
 //
-// The ScanService accepts a separate slice of DirectoryAwareDetectors. For
-// each directory in the scan tree it calls MatchDir; if true it calls
-// DetectDir. File-level Detectors are not consulted for files inside a
-// directory claimed by a DirectoryAwareDetector.
+// For each directory in the scan tree, the scan root included, the ScanService
+// calls MatchDir on every DirectoryAwareDetector and DetectDir on those that
+// match. A match claims only the files the detector Owns: the other files of
+// the directory go to the file-level Detectors, and its subdirectories are
+// walked like any other.
 //
 // The ScanService is responsible for prepending dirPath to all returned
 // Finding.FilePath values — adapters return paths relative to dir only.
@@ -94,6 +94,13 @@ type DirectoryAwareDetector interface {
 	// Same contract as Detector.Name.
 	Name() string
 
+	// Owns reports whether the file belongs to this detector's format.
+	// filePath is slash-separated and relative to the scan root.
+	// Owned files are never passed to a file-level Detector, whether or not
+	// their directory matched, so the answer must depend on the path alone
+	// and DetectDir must cover every owned file of a matching directory.
+	Owns(filePath string) bool
+
 	// MatchDir reports whether this detector should process the given directory.
 	// dirPath is slash-separated and relative to the scan root.
 	// entries are the direct children of the directory — implementations use
@@ -101,7 +108,7 @@ type DirectoryAwareDetector interface {
 	// without requiring an additional FS read.
 	MatchDir(dirPath string, entries []fs.DirEntry) bool
 
-	// DetectDir scans an entire directory in one pass.
+	// DetectDir scans the owned files of a directory in one pass.
 	// dir is an fs.FS rooted at the directory being scanned.
 	// Returned Finding.FilePath values must be relative to dir (filename only
 	// or sub-path within dir); the ScanService prepends dirPath.

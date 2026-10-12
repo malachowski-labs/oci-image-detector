@@ -66,11 +66,6 @@ func NewParsedImageRef(raw, registry, repository, tag, digest string) (ImageRef,
 	}, nil
 }
 
-// String returns the raw image reference as found in the source file.
-func (r ImageRef) String() string {
-	return r.Raw
-}
-
 // Canonical returns the fully-qualified normalised image reference.
 //
 // This is the key used for logical deduplication across different notations

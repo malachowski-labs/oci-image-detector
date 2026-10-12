@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"slices"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"go.uber.org/zap"
@@ -14,10 +15,7 @@ import (
 	"github.com/malachowski-labs/oci-image-detector/pkg/port"
 )
 
-// Compile-time check that *ScanService satisfies port.Scanner.
-var _ port.Scanner = (*ScanService)(nil)
-
-// ScanService implements port.Scanner. It walks a directory tree, dispatches
+// ScanService runs a scan. It walks a directory tree, dispatches
 // files and directories to the registered detectors, and returns a sorted
 // slice of findings.
 type ScanService struct {
@@ -29,8 +27,9 @@ type ScanService struct {
 // NewScanService constructs a ScanService.
 // detectors handles individual files; dirDetectors handles whole directories
 // (e.g. Terraform, which needs cross-file variable resolution).
-// Both slices are consulted in the order given and the first match wins;
+// detectors are consulted in the order given and the first match wins;
 // pkg/registry produces that order from each detector's declared tier.
+// Every dirDetector that matches a directory runs on it.
 func NewScanService(
 	detectors []port.Detector,
 	dirDetectors []port.DirectoryAwareDetector,
@@ -43,7 +42,7 @@ func NewScanService(
 	}
 }
 
-// Scan implements port.Scanner. It opens dir from the real filesystem and
+// Scan opens dir from the real filesystem and
 // delegates to ScanFS.
 func (s *ScanService) Scan(ctx context.Context, dir string, opts port.ScanOptions) ([]domain.Finding, error) {
 	return s.ScanFS(ctx, os.DirFS(dir), opts)
@@ -72,25 +71,21 @@ func (s *ScanService) ScanFS(ctx context.Context, fsys fs.FS, opts port.ScanOpti
 			return err
 		}
 
-		if p == "." {
-			return nil
-		}
-
-		if excluded, err := s.isExcluded(p, opts.Exclude); err != nil {
-			// Already validated above; this branch is unreachable in practice.
-			return fmt.Errorf("exclude pattern error for %q: %w", p, err)
-		} else if excluded {
+		// The scan root is never excluded: patterns are relative to it.
+		if p != "." && matchesAny(opts.Exclude, p) {
 			if d.IsDir() {
 				return fs.SkipDir
 			}
 			return nil
 		}
 
-		if d.IsDir() {
-			return s.handleDir(fsys, p, &findings)
+		if !d.IsDir() {
+			findings = append(findings, s.scanFile(fsys, p)...)
+			return nil
 		}
 
-		return s.handleFile(fsys, p, &findings)
+		findings = append(findings, s.scanDir(fsys, p)...)
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -98,62 +93,29 @@ func (s *ScanService) ScanFS(ctx context.Context, fsys fs.FS, opts port.ScanOpti
 
 	sortFindings(findings)
 
-	findings, err = filterExcludedImages(findings, opts.ExcludeImages)
-	if err != nil {
-		return nil, err
-	}
-
-	return findings, nil
+	return filterExcludedImages(findings, opts.ExcludeImages), nil
 }
 
 // filterExcludedImages removes findings whose raw image reference matches any
 // of the provided doublestar glob patterns.
-func filterExcludedImages(findings []domain.Finding, patterns []string) ([]domain.Finding, error) {
-	if len(patterns) == 0 {
-		return findings, nil
-	}
-	out := findings[:0]
-	for _, f := range findings {
-		excluded, err := isExcludedImage(f.Ref.Raw, patterns)
-		if err != nil {
-			return nil, err
-		}
-		if !excluded {
-			out = append(out, f)
-		}
-	}
-	return out, nil
+func filterExcludedImages(findings []domain.Finding, patterns []string) []domain.Finding {
+	return slices.DeleteFunc(findings, func(f domain.Finding) bool {
+		return matchesAny(patterns, f.Ref.Raw)
+	})
 }
 
-// isExcludedImage reports whether raw matches any of the provided doublestar
-// glob patterns. Patterns must have been validated with validatePatterns first.
-func isExcludedImage(raw string, patterns []string) (bool, error) {
-	for _, pattern := range patterns {
-		matched, err := doublestar.Match(pattern, raw)
-		if err != nil {
-			return false, fmt.Errorf("invalid image exclude pattern %q: %w", pattern, err)
-		}
-		if matched {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-// handleDir checks whether any DirectoryAwareDetector claims this directory.
-// When a detector matches it calls DetectDir, prepends dirPath to all returned
-// FilePaths, and returns fs.SkipDir so WalkDir does not descend further.
-// fs.SkipDir is the sole mechanism preventing double-reporting — there is no
-// need for a separate "claimed dirs" bookkeeping structure.
-// On fs.Sub failure the directory is skipped entirely (fail-closed) so file
-// detectors do not silently take over for a directory the dir-detector claimed.
-func (s *ScanService) handleDir(fsys fs.FS, dirPath string, findings *[]domain.Finding) error {
+// scanDir runs every DirectoryAwareDetector that matches the directory and
+// returns their findings, with FilePaths relative to the scan root. The walk
+// goes on into the directory afterwards: the files those detectors own are
+// held back from the file-level detectors by scanFile.
+func (s *ScanService) scanDir(fsys fs.FS, dirPath string) []domain.Finding {
 	entries, err := fs.ReadDir(fsys, dirPath)
 	if err != nil {
 		s.log.Warn("cannot read directory entries", zap.String("path", dirPath), zap.Error(err))
 		return nil
 	}
 
+	var findings []domain.Finding
 	for _, det := range s.dirDetectors {
 		if !det.MatchDir(dirPath, entries) {
 			continue
@@ -161,13 +123,11 @@ func (s *ScanService) handleDir(fsys fs.FS, dirPath string, findings *[]domain.F
 
 		subFS, err := fs.Sub(fsys, dirPath)
 		if err != nil {
-			s.log.Warn("cannot open sub-FS for directory — skipping subtree",
+			s.log.Warn("cannot open sub-FS for directory",
 				zap.String("path", dirPath),
 				zap.String("detector", det.Name()),
 				zap.Error(err))
-			// Fail-closed: skip the whole subtree rather than silently falling
-			// back to file-level detectors for a directory we already claimed.
-			return fs.SkipDir
+			continue
 		}
 
 		dirFindings, err := det.DetectDir(subFS)
@@ -184,18 +144,20 @@ func (s *ScanService) handleDir(fsys fs.FS, dirPath string, findings *[]domain.F
 		for i := range dirFindings {
 			dirFindings[i].FilePath = path.Join(dirPath, dirFindings[i].FilePath)
 		}
-
-		*findings = append(*findings, dirFindings...)
-		return fs.SkipDir
+		findings = append(findings, dirFindings...)
 	}
-
-	return nil
+	return findings
 }
 
-// handleFile dispatches a single file to the first matching Detector.
-// Files inside directories claimed by a DirectoryAwareDetector are never
-// passed here because WalkDir skips those subtrees via fs.SkipDir.
-func (s *ScanService) handleFile(fsys fs.FS, filePath string, findings *[]domain.Finding) error {
+// scanFile dispatches a single file to the first matching Detector and returns
+// its findings. A file owned by a DirectoryAwareDetector is left to that
+// detector, even when its directory did not match or could not be scanned:
+// a file-level detector must not silently take over for it.
+func (s *ScanService) scanFile(fsys fs.FS, filePath string) []domain.Finding {
+	if s.ownedByDirDetector(filePath) {
+		return nil
+	}
+
 	det := s.matchDetector(filePath)
 	if det == nil {
 		return nil
@@ -210,7 +172,7 @@ func (s *ScanService) handleFile(fsys fs.FS, filePath string, findings *[]domain
 		return nil
 	}
 
-	fileFindings, err := det.Detect(filePath, content)
+	findings, err := det.Detect(filePath, content)
 	if err != nil {
 		s.log.Warn("detector error",
 			zap.String("path", filePath),
@@ -218,9 +180,14 @@ func (s *ScanService) handleFile(fsys fs.FS, filePath string, findings *[]domain
 			zap.Error(err))
 		// Use whatever partial findings the detector returned.
 	}
+	return findings
+}
 
-	*findings = append(*findings, fileFindings...)
-	return nil
+// ownedByDirDetector reports whether a DirectoryAwareDetector owns the file.
+func (s *ScanService) ownedByDirDetector(filePath string) bool {
+	return slices.ContainsFunc(s.dirDetectors, func(det port.DirectoryAwareDetector) bool {
+		return det.Owns(filePath)
+	})
 }
 
 // matchDetector returns the first registered Detector whose Match returns true
@@ -234,19 +201,12 @@ func (s *ScanService) matchDetector(filePath string) port.Detector {
 	return nil
 }
 
-// isExcluded reports whether path matches any of the provided doublestar
-// glob patterns. Patterns must have been validated with validatePatterns first.
-func (s *ScanService) isExcluded(p string, patterns []string) (bool, error) {
-	for _, pattern := range patterns {
-		matched, err := doublestar.Match(pattern, p)
-		if err != nil {
-			return false, fmt.Errorf("invalid glob pattern %q: %w", pattern, err)
-		}
-		if matched {
-			return true, nil
-		}
-	}
-	return false, nil
+// matchesAny reports whether s matches any of the provided doublestar glob
+// patterns. Patterns must have been validated with validatePatterns first.
+func matchesAny(patterns []string, s string) bool {
+	return slices.ContainsFunc(patterns, func(pattern string) bool {
+		return doublestar.MatchUnvalidated(pattern, s)
+	})
 }
 
 // validatePatterns checks all patterns up-front before the walk starts so

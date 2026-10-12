@@ -30,6 +30,7 @@ func (d *stubDetector) Detect(string, []byte) ([]domain.Finding, error) {
 type stubDirDetector struct{ name string }
 
 func (d *stubDirDetector) Name() string                        { return d.name }
+func (d *stubDirDetector) Owns(string) bool                    { return false }
 func (d *stubDirDetector) MatchDir(string, []fs.DirEntry) bool { return true }
 func (d *stubDirDetector) DetectDir(fs.FS) ([]domain.Finding, error) {
 	return nil, nil

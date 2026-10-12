@@ -21,14 +21,11 @@ const maxFindingsPerAttr = 1000
 const unresolvedMark = "${}"
 
 // imageRefsIn returns every OCI image reference found in s, applying the shared
-// strict precision filter (imageref.Candidates → Parse → LooksLikeImage).
+// strict precision filter (imageref.Candidates → Parse).
 func imageRefsIn(s string) []domain.ImageRef {
 	var refs []domain.ImageRef
 	for _, raw := range imageref.Candidates(s) {
-		ref := imageref.Parse(raw)
-		if imageref.LooksLikeImage(ref) {
-			refs = append(refs, ref)
-		}
+		refs = append(refs, imageref.Parse(raw))
 	}
 	return refs
 }

@@ -169,10 +169,3 @@ func TestJSONFile_endsWithNewline(t *testing.T) {
 		t.Errorf("file should end with newline, got: %q", string(data[max(0, len(data)-5):]))
 	}
 }
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}

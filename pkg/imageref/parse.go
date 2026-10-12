@@ -124,23 +124,6 @@ func tagFromTaggedDigest(raw string) string {
 	return ""
 }
 
-// LooksLikeImage reports whether ref is likely an OCI image reference worth
-// reporting. Detectors use this to filter false positives after calling Parse:
-//
-//   - Parsed refs: require "/" or ":" in the raw string so that plain words
-//     (e.g. "enabled", "true") that go-containerregistry silently accepts as
-//     index.docker.io/library/<word>:latest are not emitted as findings.
-//   - Unparsed refs (unresolvable template placeholders): require a version
-//     qualifier (":" or "@sha256:") because an expression without a version
-//     component is unlikely to identify a specific image.
-func LooksLikeImage(ref domain.ImageRef) bool {
-	if ref.Parsed {
-		return strings.ContainsAny(ref.Raw, "/:") || strings.Contains(ref.Raw, "@sha256:")
-	}
-	// Unparsed path: only version-qualified template refs are emitted.
-	return strings.Contains(ref.Raw, ":") || strings.Contains(ref.Raw, "@sha256:")
-}
-
 // containsTemplate reports whether s contains a known template placeholder
 // that cannot be resolved at scan time. Each check is annotated with the
 // template syntax it targets.

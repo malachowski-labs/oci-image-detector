@@ -25,10 +25,10 @@ func TestDetector_Match(t *testing.T) {
 		{"Dockerfile", true},
 		{"values.yaml", true},
 		{".github/workflows/ci.yml", true},
-		// Terraform is directory-aware and therefore outside tier ordering.
-		{"main.tf", false},
-		{"terraform.tfvars", false},
-		{"modules/app/MAIN.TF", false},
+		// Nor is yielding to a directory-aware detector: the scan service
+		// holds back the files such a detector owns.
+		{"main.tf", true},
+		{"terraform.tfvars", true},
 	}
 	for _, tc := range cases {
 		if got := det.Match(tc.path); got != tc.want {

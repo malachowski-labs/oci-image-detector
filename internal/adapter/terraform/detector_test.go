@@ -38,6 +38,26 @@ func TestDetector_MatchDir(t *testing.T) {
 	}
 }
 
+func TestDetector_Owns(t *testing.T) {
+	det := terraform.New()
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"main.tf", true},
+		{"terraform.tfvars", true},
+		{"modules/app/MAIN.TF", true},
+		{"infra/Dockerfile", false},
+		{"infra/values.yaml", false},
+		{"notes.tf.md", false},
+	}
+	for _, tc := range cases {
+		if got := det.Owns(tc.path); got != tc.want {
+			t.Errorf("Owns(%q) = %v, want %v", tc.path, got, tc.want)
+		}
+	}
+}
+
 func TestDetector_DetectDir_directString(t *testing.T) {
 	dir := fstest.MapFS{
 		"main.tf": {Data: []byte(`

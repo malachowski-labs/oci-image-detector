@@ -15,8 +15,8 @@ func TestDetector_Match(t *testing.T) {
 		{".github/workflows/ci.yml", true},
 		{".github/workflows/release.yaml", true},
 		{".github/actions/setup/action.yml", true},
-		{"workflows/ci.yml", false},        // not under .github/
-		{".github/dependabot.yml", false},  // not under workflows/ or actions/
+		{"workflows/ci.yml", false},       // not under .github/
+		{".github/dependabot.yml", false}, // not under workflows/ or actions/
 		{"Dockerfile", false},
 		{"values.yaml", false},
 		{"main.tf", false},
@@ -64,6 +64,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
+`,
+			wantRaws: nil,
+		},
+		{
+			name: "empty and null container values name no image",
+			content: `
+jobs:
+  a:
+    container:
+  b:
+    container: ""
+  c:
+    container: ~
+  d:
+    container:
+      image: null
+    services:
+      db:
+        image:
 `,
 			wantRaws: nil,
 		},
