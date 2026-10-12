@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/malachowski-labs/oci-image-detector/internal/port"
@@ -35,25 +37,65 @@ func TestBuiltinDetectors_registersDirDetectors(t *testing.T) {
 	}
 }
 
-// helm claims every values.yaml and githubactions claims every YAML file under
-// .github/workflows/ and .github/actions/. Where both match, githubactions
-// must win: GitHub treats those files as workflows regardless of their name.
-func TestBuiltinDetectors_githubactionsWinsOverHelm(t *testing.T) {
-	for _, p := range []string{
-		".github/workflows/values.yaml",
-		".github/actions/build/values.yml",
-	} {
-		t.Run(p, func(t *testing.T) {
+// Self-registration fails silently: dropping a blank import from detectors.go
+// removes a detector without a compile error. Pinning the exact set turns that
+// into a test failure.
+func TestBuiltinDetectors_exactSet(t *testing.T) {
+	var files []string
+	for _, d := range registry.Default().Detectors() {
+		files = append(files, d.Name())
+	}
+	if want := []string{"dockerfile", "githubactions", "helm", "generic"}; !slices.Equal(files, want) {
+		t.Errorf("file-level detectors = %v, want %v", files, want)
+	}
+
+	var dirs []string
+	for _, d := range registry.Default().DirDetectors() {
+		dirs = append(dirs, d.Name())
+	}
+	if want := []string{"terraform"}; !slices.Equal(dirs, want) {
+		t.Errorf("directory-aware detectors = %v, want %v", dirs, want)
+	}
+}
+
+// Specialists must claim disjoint sets of files. Name order within a tier only
+// makes the result deterministic; it must never be what decides which
+// specialist owns a file.
+func TestBuiltinDetectors_specialistsDoNotOverlap(t *testing.T) {
+	tests := []struct {
+		path string
+		want string // owning specialist; empty when the file is left to the fallback
+	}{
+		{path: "Dockerfile", want: "dockerfile"},
+		{path: "build/Dockerfile.prod", want: "dockerfile"},
+		{path: "build/app.dockerfile", want: "dockerfile"},
+		{path: "values.yaml", want: "helm"},
+		{path: "charts/app/values.yml", want: "helm"},
+		{path: ".github/workflows/ci.yml", want: "githubactions"},
+		{path: ".github/actions/build/action.yaml", want: "githubactions"},
+		// GitHub treats these as workflows and actions regardless of their name.
+		{path: ".github/workflows/values.yaml", want: "githubactions"},
+		{path: ".github/actions/build/values.yml", want: "githubactions"},
+		{path: ".github/workflows/Dockerfile", want: "dockerfile"},
+		{path: "deploy/app.yaml", want: ""},
+		{path: "README.md", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			var owners []string
 			for _, d := range registry.Default().Detectors() {
-				if !d.Match(p) {
-					continue
+				if d.Tier() == port.TierSpecialist && d.Match(tt.path) {
+					owners = append(owners, d.Name())
 				}
-				if got, want := d.Name(), "githubactions"; got != want {
-					t.Errorf("first matching detector = %q, want %q", got, want)
-				}
-				return
 			}
-			t.Error("no detector matched")
+
+			if len(owners) > 1 {
+				t.Fatalf("specialists %v all claim the file", owners)
+			}
+			if got := strings.Join(owners, ""); got != tt.want {
+				t.Errorf("owning specialist = %q, want %q", got, tt.want)
+			}
 		})
 	}
 }

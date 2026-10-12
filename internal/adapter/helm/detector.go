@@ -33,9 +33,17 @@ func (d *Detector) Name() string { return string(Strategy) }
 func (d *Detector) Tier() port.Tier { return port.TierSpecialist }
 
 // Match implements port.Detector.
-// Returns true for values.yaml and values.yml at any depth in the tree.
+// Returns true for values.yaml and values.yml at any depth in the tree, except
+// under .github/workflows/ and .github/actions/: GitHub treats every YAML file
+// there as a workflow or action regardless of its name.
 func (d *Detector) Match(filePath string) bool {
-	lower := strings.ToLower(path.Base(filePath))
+	lowerPath := strings.ToLower(filePath)
+	if strings.Contains(lowerPath, ".github/workflows/") ||
+		strings.Contains(lowerPath, ".github/actions/") {
+		return false
+	}
+
+	lower := path.Base(lowerPath)
 	return lower == "values.yaml" || lower == "values.yml"
 }
 

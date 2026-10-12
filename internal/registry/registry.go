@@ -11,6 +11,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 
 	"github.com/malachowski-labs/oci-image-detector/internal/port"
@@ -73,10 +74,10 @@ func MustRegisterDir(d port.DirectoryAwareDetector) {
 // unknown tier, so a misconfigured detector fails at start-up rather than
 // silently shadowing another one mid-scan.
 func (r *Registry) Register(d port.Detector) error {
-	if d == nil {
+	if isNil(d) {
 		return ErrNilDetector
 	}
-	if t := d.Tier(); t != port.TierSpecialist && t != port.TierFallback {
+	if t := d.Tier(); !t.Valid() {
 		return fmt.Errorf("%w: %q declares %s", ErrUnknownTier, d.Name(), t)
 	}
 	if err := r.claimName(d.Name()); err != nil {
@@ -90,7 +91,7 @@ func (r *Registry) Register(d port.Detector) error {
 // Names are unique across both kinds of detector because a name becomes
 // Finding.Strategy regardless of which kind produced the finding.
 func (r *Registry) RegisterDir(d port.DirectoryAwareDetector) error {
-	if d == nil {
+	if isNil(d) {
 		return ErrNilDetector
 	}
 	if err := r.claimName(d.Name()); err != nil {
@@ -121,6 +122,20 @@ func (r *Registry) DirDetectors() []port.DirectoryAwareDetector {
 		return cmp.Compare(a.Name(), b.Name())
 	})
 	return out
+}
+
+// isNil reports whether d is a nil interface or an interface holding a nil
+// value, such as a nil *Detector. A plain d == nil misses the latter.
+func isNil(d any) bool {
+	if d == nil {
+		return true
+	}
+	switch v := reflect.ValueOf(d); v.Kind() {
+	case reflect.Pointer, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan:
+		return v.IsNil()
+	default:
+		return false
+	}
 }
 
 // claimName reserves name, failing when it is empty or already taken.

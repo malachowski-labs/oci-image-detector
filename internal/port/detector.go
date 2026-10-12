@@ -27,6 +27,11 @@ const (
 	TierFallback
 )
 
+// Valid reports whether t is one of the declared tiers.
+func (t Tier) Valid() bool {
+	return t == TierSpecialist || t == TierFallback
+}
+
 // String returns the lower-case name of the tier, for logs and error messages.
 func (t Tier) String() string {
 	switch t {
@@ -49,8 +54,9 @@ type Detector interface {
 	Name() string
 
 	// Tier returns the priority class of this detector. The registry orders
-	// detectors by tier, so Match never has to know which other detectors
-	// exist in order to yield to them.
+	// detectors by tier, so a fallback is only consulted for files no
+	// specialist claimed. Detectors that share a tier must claim disjoint
+	// sets of files: order within a tier is deterministic, not a precedence.
 	Tier() Tier
 
 	// Match reports whether this detector should handle the given file path.
