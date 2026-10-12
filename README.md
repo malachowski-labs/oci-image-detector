@@ -239,7 +239,7 @@ Add `oci-image-detector:ignore` in a comment next to the image reference. Where 
 | GitHub Actions | YAML comment on the value holding the reference, or on the reference's own line inside a block scalar |
 | Docker Compose | YAML comment on the value holding the reference, or on the reference's own line inside a block scalar |
 | Kubernetes | YAML comment on the value holding the reference, or on the reference's own line inside a block scalar |
-| Dockerfile | Not supported — use [`--exclude-images`](#--exclude-images--exclude-images-input) |
+| Dockerfile | Comment line directly above the instruction, or inside its `\` continuation |
 
 ```go
 const img = "localhost:5000/example:v1" // oci-image-detector:ignore
@@ -247,6 +247,11 @@ const img = "localhost:5000/example:v1" // oci-image-detector:ignore
 
 ```hcl
 image = "localhost:5000/example:v1"  # oci-image-detector:ignore
+```
+
+```dockerfile
+# oci-image-detector:ignore
+FROM localhost:5000/example:v1
 ```
 
 ```yaml
@@ -264,11 +269,11 @@ container:
 
 > **Terraform:** annotating a variable `default` also suppresses every finding produced by uses of that variable.
 
-> **Dockerfile:** Docker only treats `#` as a comment at the start of a line, so a trailing annotation on a `FROM` line breaks the build, and comment-only lines are not read by the detector.
+> **Dockerfile:** Docker only treats `#` as a comment at the start of a line, so the annotation goes on a comment line of its own. It suppresses every reference of the instruction that follows, may share the comment block above it with other comments, and is detached by a blank line. A trailing annotation is still honoured, but only use it where the build accepts it, such as the shell comment at the end of a `RUN`.
 
 ### `--exclude-images` / `exclude-images` input
 
-Filter findings by image reference using [doublestar](https://github.com/bmatcuk/doublestar) glob patterns. Useful when the same placeholder image appears across many files, when the source is generated or vendored and cannot be edited, or for Dockerfiles.
+Filter findings by image reference using [doublestar](https://github.com/bmatcuk/doublestar) glob patterns. Useful when the same placeholder image appears across many files, or when the source is generated or vendored and cannot be edited.
 
 Patterns are matched against the reference **as written in the source** (`ref.raw` in the JSON report), not the normalised form (`ref.canonical`). A bare `nginx:1.25` is matched by `nginx:*`, not by `docker.io/**` or `index.docker.io/**`.
 

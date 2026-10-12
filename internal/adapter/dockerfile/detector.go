@@ -46,9 +46,12 @@ func (d *Detector) Match(filePath string) bool {
 // instruction is a single logical Dockerfile instruction with the 1-based line
 // number on which it begins. Physical lines joined by a trailing backslash
 // collapse into one instruction carrying the line of the first physical line.
+// ignored is set when a comment line directly above the instruction, or inside
+// its continuation, carries the inline suppression annotation.
 type instruction struct {
-	line uint
-	text string
+	line    uint
+	text    string
+	ignored bool
 }
 
 // Detect implements port.Detector.
@@ -77,7 +80,9 @@ func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, er
 	var findings []domain.Finding
 
 	for _, in := range logicalInstructions(content) {
-		if suppress.IsIgnoredLine(in.text) {
+		// The annotation in the instruction text itself is honoured too: after
+		// a RUN it is a shell comment, so it does not break the build.
+		if in.ignored || suppress.IsIgnoredLine(in.text) {
 			continue
 		}
 		fields := strings.Fields(in.text)
@@ -163,6 +168,11 @@ func newFinding(raw string, line uint, filePath string) domain.Finding {
 // backslash-continued physical lines and dropping blank and comment lines
 // (including comment lines that appear within a continuation, which Docker
 // strips). Each instruction keeps the line number of its first physical line.
+//
+// A dropped comment line may still carry the inline suppression annotation,
+// since a comment of its own is the only place Docker accepts one on every
+// instruction. It marks the instruction it sits in, or the one that follows
+// its comment block; a blank line detaches the block from that instruction.
 func logicalInstructions(content []byte) []instruction {
 	var (
 		out        []instruction
@@ -170,6 +180,7 @@ func logicalInstructions(content []byte) []instruction {
 		startLine  uint
 		lineNum    uint
 		continuing bool
+		ignored    bool
 	)
 
 	for raw := range bytes.Lines(content) {
@@ -179,10 +190,12 @@ func logicalInstructions(content []byte) []instruction {
 
 		// Comment lines are dropped whether or not we are mid-continuation.
 		if strings.HasPrefix(trimmed, "#") {
+			ignored = ignored || suppress.IsIgnoredLine(trimmed)
 			continue
 		}
 		if !continuing {
 			if trimmed == "" {
+				ignored = false
 				continue
 			}
 			startLine = lineNum
@@ -198,13 +211,14 @@ func logicalInstructions(content []byte) []instruction {
 		}
 
 		cur.WriteString(line)
-		out = append(out, instruction{line: startLine, text: strings.TrimSpace(cur.String())})
+		out = append(out, instruction{line: startLine, text: strings.TrimSpace(cur.String()), ignored: ignored})
 		continuing = false
+		ignored = false
 	}
 
 	// A file ending on a continuation still yields its accumulated instruction.
 	if continuing {
-		out = append(out, instruction{line: startLine, text: strings.TrimSpace(cur.String())})
+		out = append(out, instruction{line: startLine, text: strings.TrimSpace(cur.String()), ignored: ignored})
 	}
 
 	return out
