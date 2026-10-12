@@ -6,10 +6,10 @@ A production-ready CLI tool and GitHub Action that **recursively scans a directo
 |---|---|
 | `Dockerfile` / `Containerfile` | `FROM` instructions (incl. `--platform`, `AS` aliases, `scratch`) |
 | Helm `values.yaml` and per-environment variants (`values-*.yaml`, `values.*.yaml`, `*-values.yaml`, `*.values.yaml`, incl. `.yml`) | `registry` + `repository` + `tag` / `digest` blocks and pinned strings (`image: nginx:1.25`) under image-shaped keys, incl. short forms; fully-qualified references in any other value |
-| Docker Compose `compose.yaml` / `docker-compose.yaml` (incl. `.yml` and `compose.<suffix>.yaml` overrides) | `services.<name>.image`, incl. short forms and images shared through YAML anchors and merge keys; fully-qualified references in any other value |
+| Docker Compose `compose.yaml` / `docker-compose.yaml` (incl. `.yml` and `compose.<suffix>.yaml` overrides) | `services.<name>.image` and `docker-image://` additional build contexts, incl. short forms and images shared through YAML anchors and merge keys; fully-qualified references in any other value |
 | Kubernetes manifests: any `*.yaml` / `*.yml` with an `apiVersion` and `kind` | `image` of every `containers` / `initContainers` / `ephemeralContainers` entry, incl. short forms; fully-qualified references in any other value |
 | Terraform `*.tf` | `image` / `container` / `source` variable defaults, locals, and resource arguments |
-| GitHub Actions `*.yml` / `*.yaml` under `.github/workflows/` and `.github/actions/` | `uses: docker://image:tag` steps, `container.image`, `services.<name>.image`, incl. short forms; fully-qualified references in any other value |
+| GitHub Actions `*.yml` / `*.yaml` under `.github/workflows/` and `.github/actions/` | `uses: docker://image:tag` steps, `container.image`, `services.<name>.image`, `runs.image: docker://image:tag` of a container action, incl. short forms; fully-qualified references in any other value |
 | Any text file | Bare `<registry>/<image>:<tag>`, `<image>:<tag>`, and `@sha256:` references |
 
 ---

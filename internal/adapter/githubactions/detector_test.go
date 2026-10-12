@@ -213,6 +213,24 @@ jobs:
 			wantRaws: []string{"quay.io/org/other:v1"},
 		},
 		{
+			name: "docker container action image",
+			content: `
+runs:
+  using: docker
+  image: docker://ghcr.io/org/action:v1
+`,
+			wantRaws: []string{"ghcr.io/org/action:v1"},
+		},
+		{
+			name: "docker container action built from a Dockerfile names no image",
+			content: `
+runs:
+  using: docker
+  image: Dockerfile
+`,
+			wantRaws: nil,
+		},
+		{
 			name:     "empty file",
 			content:  "",
 			wantRaws: nil,

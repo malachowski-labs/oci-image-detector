@@ -42,11 +42,14 @@ func (d *Detector) Match(filePath string) bool {
 }
 
 // Detect implements port.Detector.
-// It reports OCI image references from three locations in a workflow file:
+// It reports OCI image references from four locations in a workflow or
+// action file:
 //
 //   - Step uses fields with the docker:// prefix (e.g. uses: docker://alpine:3.12)
 //   - Job-level container images (container.image or the shorthand container: image)
 //   - Service container images (services.<name>.image)
+//   - The image of a Docker container action (runs.image with the docker://
+//     prefix; a path to a Dockerfile names no image)
 //
 // Every other string of the file, keys included, is scanned with the strict
 // imageref.Candidates filter, so fully-qualified references in run scripts,
@@ -143,11 +146,15 @@ func imageValue(key, parentKey, value string) (string, bool) {
 	case key == "image" && (parentKey == "container" || parentKey == serviceEntry):
 		// image: within a container or service block
 		return value, true
+	case key == "image" && parentKey == "runs":
+		// Docker container action: image: docker://image:tag
+		return stripDockerScheme(value)
 	}
 	return "", false
 }
 
-// stripDockerScheme removes the "docker://" prefix from a step "uses" value.
+// stripDockerScheme removes the "docker://" prefix from a step "uses" or an
+// action "runs.image" value.
 // Returns ("", false) for any value that does not start with "docker://".
 func stripDockerScheme(uses string) (string, bool) {
 	raw, ok := strings.CutPrefix(uses, "docker://")

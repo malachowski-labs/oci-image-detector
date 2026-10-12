@@ -283,6 +283,27 @@ services:
 			wantRaws: []string{"nginx:1.25"},
 		},
 		{
+			name: "image used as an additional build context",
+			content: `
+services:
+  web:
+    image: nginx:1.25
+    build:
+      context: .
+      additional_contexts:
+        base: docker-image://alpine:3.19
+        src: ./src
+        repo: https://github.com/org/repo.git
+  api:
+    build:
+      additional_contexts:
+        - tools=docker-image://ghcr.io/org/tools:v4
+        - docs=../docs
+        - ignored=docker-image://busybox:1  # oci-image-detector:ignore
+`,
+			wantRaws: []string{"nginx:1.25", "alpine:3.19", "ghcr.io/org/tools:v4"},
+		},
+		{
 			name: "services is not a mapping",
 			content: `
 services: []

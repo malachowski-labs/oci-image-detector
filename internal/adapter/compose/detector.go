@@ -20,6 +20,10 @@ import (
 // Strategy is the stable identifier for this detection strategy.
 const Strategy domain.Strategy = "compose"
 
+// dockerImageScheme marks an additional build context that is an image
+// rather than a directory or a Git repository.
+const dockerImageScheme = "docker-image://"
+
 // mergeKey is the YAML merge key, which pulls the keys of an aliased mapping
 // (or a sequence of them) into the mapping that carries it.
 const mergeKey = "<<"
@@ -64,7 +68,9 @@ func (d *Detector) Match(filePath string) bool {
 // It reports the image of every service, i.e. the services.<name>.image
 // scalars: an "image" key anywhere else in the file is not a service image.
 // The field is unambiguous, so short forms ("nginx:1.25") and tag-less
-// references ("nginx") are reported as written.
+// references ("nginx") are reported as written. So is an image a service uses
+// as an additional build context (build.additional_contexts with the
+// "docker-image://" prefix).
 //
 // Every other string of the file, keys included, is scanned with the strict
 // imageref.Candidates filter, so fully-qualified references in environment
@@ -96,17 +102,17 @@ func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, er
 		})
 	}
 
-	// Service image nodes: one shared through an anchor is reported once, and
-	// none of them is scanned again as text.
+	// Nodes of the images services name: one shared through an anchor is
+	// reported once, and none of them is scanned again as text.
 	seen := map[*yaml.Node]bool{}
-	for _, image := range serviceImages(resolve(root.Content[0])) {
-		if seen[image] {
+	for _, ref := range serviceReferences(resolve(root.Content[0])) {
+		if seen[ref.node] {
 			continue
 		}
-		seen[image] = true
+		seen[ref.node] = true
 
-		if !suppress.IsIgnoredLine(image.LineComment) {
-			report(imageref.Parse(image.Value), image.Line)
+		if !suppress.IsIgnoredLine(ref.node.LineComment) {
+			report(imageref.Parse(ref.raw), ref.node.Line)
 		}
 	}
 
@@ -114,23 +120,68 @@ func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, er
 	return findings, nil
 }
 
-// serviceImages returns the image node of every service of the document, in
-// file order. Services that share an image through an anchor yield the same
-// node.
-func serviceImages(doc *yaml.Node) []*yaml.Node {
+// reference is an image a service names: the node it is written on and the
+// reference itself, which for a build context is only part of the node's text.
+type reference struct {
+	node *yaml.Node
+	raw  string
+}
+
+// serviceReferences returns the images the services of the document name, in
+// file order: the image of each service, then its build context images.
+// Services that share an image through an anchor yield the same node.
+func serviceReferences(doc *yaml.Node) []reference {
 	services := mapValue(doc, "services")
 	if services == nil || services.Kind != yaml.MappingNode {
 		return nil
 	}
 
-	var images []*yaml.Node
+	var refs []reference
 	for i := 0; i+1 < len(services.Content); i += 2 {
-		image := mapValue(resolve(services.Content[i+1]), "image")
-		if image != nil && isImageValue(image) {
-			images = append(images, image)
+		service := resolve(services.Content[i+1])
+		if image := mapValue(service, "image"); image != nil && isImageValue(image) {
+			refs = append(refs, reference{node: image, raw: image.Value})
+		}
+		refs = append(refs, contextImages(service)...)
+	}
+	return refs
+}
+
+// contextImages returns the images a service uses as additional build
+// contexts: the "docker-image://" values of build.additional_contexts, in
+// either its mapping form or its list form ("name=docker-image://…").
+func contextImages(service *yaml.Node) []reference {
+	build := mapValue(service, "build")
+	if build == nil {
+		return nil
+	}
+	contexts := mapValue(build, "additional_contexts")
+	if contexts == nil {
+		return nil
+	}
+
+	var refs []reference
+	add := func(node *yaml.Node, value string) {
+		raw, ok := strings.CutPrefix(value, dockerImageScheme)
+		if ok && raw != "" && node.Kind == yaml.ScalarNode {
+			refs = append(refs, reference{node: node, raw: raw})
 		}
 	}
-	return images
+
+	switch contexts.Kind {
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(contexts.Content); i += 2 {
+			value := resolve(contexts.Content[i+1])
+			add(value, value.Value)
+		}
+	case yaml.SequenceNode:
+		for _, item := range contexts.Content {
+			item = resolve(item)
+			_, value, _ := strings.Cut(item.Value, "=")
+			add(item, value)
+		}
+	}
+	return refs
 }
 
 // scanText reports the fully-qualified references in every key and value at
