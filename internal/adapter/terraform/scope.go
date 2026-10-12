@@ -10,7 +10,7 @@ import (
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
 
-	"github.com/malachowski-labs/oci-image-detector/internal/adapter/imageref"
+	"github.com/malachowski-labs/oci-image-detector/pkg/suppress"
 )
 
 // Evaluation limits. The detector runs on untrusted input, and a few bytes of
@@ -32,7 +32,7 @@ var errLimited = errors.New("terraform: evaluation limits reached; some expressi
 // parsedFile is one .tf file. body is nil when nothing could be parsed; broken
 // marks a file with syntax errors, whose body is only a partial recovery. The
 // raw lines let the scanner honor inline suppress annotations
-// (imageref.IsIgnoredLine) by source position.
+// (suppress.IsIgnoredLine) by source position.
 type parsedFile struct {
 	name   string
 	body   *hclsyntax.Body
@@ -99,7 +99,7 @@ func spansIgnoredLine(lines []string, rng hcl.Range) bool {
 // isIgnoredLine reports whether the 1-based source line carries the inline
 // suppress annotation.
 func isIgnoredLine(lines []string, line int) bool {
-	return line >= 1 && line <= len(lines) && imageref.IsIgnoredLine(lines[line-1])
+	return line >= 1 && line <= len(lines) && suppress.IsIgnoredLine(lines[line-1])
 }
 
 // sized is an evaluated value together with its measured footprint.

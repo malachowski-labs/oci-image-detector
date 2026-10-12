@@ -7,10 +7,11 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/malachowski-labs/oci-image-detector/internal/adapter/imageref"
 	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/imageref"
 	"github.com/malachowski-labs/oci-image-detector/pkg/port"
 	"github.com/malachowski-labs/oci-image-detector/pkg/registry"
+	"github.com/malachowski-labs/oci-image-detector/pkg/suppress"
 )
 
 // Strategy is the stable identifier for this detection strategy.
@@ -79,7 +80,7 @@ func walkNode(node *yaml.Node, parentKey, filePath string, findings *[]domain.Fi
 
 			// Step: uses: docker://image:tag
 			if key == "uses" && val.Kind == yaml.ScalarNode {
-				if !imageref.IsIgnoredLine(val.LineComment) {
+				if !suppress.IsIgnoredLine(val.LineComment) {
 					if raw, ok := stripDockerScheme(val.Value); ok {
 						*findings = append(*findings, newFinding(raw, uint(val.Line), filePath))
 					}
@@ -89,7 +90,7 @@ func walkNode(node *yaml.Node, parentKey, filePath string, findings *[]domain.Fi
 
 			// Job-level container shorthand: container: image:tag (scalar form)
 			if key == "container" && val.Kind == yaml.ScalarNode {
-				if !imageref.IsIgnoredLine(val.LineComment) {
+				if !suppress.IsIgnoredLine(val.LineComment) {
 					*findings = append(*findings, newFinding(val.Value, uint(val.Line), filePath))
 				}
 				continue
@@ -98,7 +99,7 @@ func walkNode(node *yaml.Node, parentKey, filePath string, findings *[]domain.Fi
 			// image: within a container or service block
 			if key == "image" && val.Kind == yaml.ScalarNode &&
 				(parentKey == "container" || parentKey == "service") {
-				if !imageref.IsIgnoredLine(val.LineComment) {
+				if !suppress.IsIgnoredLine(val.LineComment) {
 					*findings = append(*findings, newFinding(val.Value, uint(val.Line), filePath))
 				}
 				continue

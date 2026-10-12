@@ -107,7 +107,7 @@ spike above and can be revisited independently:
   render Helm templates. Node-walking keyed on `apiVersion`/`kind` and known
   container `image:` paths is sufficient and adds zero dependencies.
 - **Reference validation**: keep `github.com/google/go-containerregistry`
-  (already used by `internal/adapter/imageref`). Do **not** add
+  (already used by `pkg/imageref`). Do **not** add
   `github.com/distribution/reference` — it would be a second grammar for a job
   already covered.
 - **Terraform (HCL)**: the only remaining specialist whose accuracy genuinely

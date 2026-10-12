@@ -8,10 +8,11 @@ import (
 	"path"
 	"strings"
 
-	"github.com/malachowski-labs/oci-image-detector/internal/adapter/imageref"
 	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/imageref"
 	"github.com/malachowski-labs/oci-image-detector/pkg/port"
 	"github.com/malachowski-labs/oci-image-detector/pkg/registry"
+	"github.com/malachowski-labs/oci-image-detector/pkg/suppress"
 )
 
 // Strategy is the stable identifier for this detection strategy.
@@ -72,7 +73,7 @@ func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, er
 		lineNum++
 		line := scanner.Text()
 
-		if imageref.IsIgnoredLine(line) {
+		if suppress.IsIgnoredLine(line) {
 			continue
 		}
 
