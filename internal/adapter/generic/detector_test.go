@@ -19,17 +19,16 @@ func TestDetector_Match(t *testing.T) {
 		{"deploy.yaml", true},
 		{"README.md", true},
 		{"some/nested/file.txt", true},
-		// Specialist files generic must NOT handle.
-		{"Dockerfile", false},
-		{"Dockerfile.dev", false},
-		{"app.dockerfile", false},
+		// Files of file-level specialists are accepted too: the registry
+		// consults every specialist before this fallback, so yielding to them
+		// is not Match's job.
+		{"Dockerfile", true},
+		{"values.yaml", true},
+		{".github/workflows/ci.yml", true},
+		// Terraform is directory-aware and therefore outside tier ordering.
 		{"main.tf", false},
 		{"terraform.tfvars", false},
-		{"values.yaml", false},
-		{"values.yml", false},
-		{"charts/app/values.yaml", false},
-		{".github/workflows/ci.yml", false},
-		{".github/actions/setup/action.yml", false},
+		{"modules/app/MAIN.TF", false},
 	}
 	for _, tc := range cases {
 		if got := det.Match(tc.path); got != tc.want {

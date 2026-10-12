@@ -22,9 +22,11 @@ const Strategy domain.Strategy = "generic"
 // on minified JSON, auto-generated YAML, or other wide-line files.
 const maxScanTokenSize = 1 << 20 // 1 MiB
 
-// specialistExtensions lists file extensions exclusively owned by specialist
-// detectors. Generic.Match returns false for these.
-var specialistExtensions = []string{".tf", ".tfvars"}
+// terraformExtensions lists the file extensions owned by the Terraform
+// detector. It is directory-aware, so tier ordering does not shield its files:
+// one that sits in a directory Terraform did not claim (a lone .tfvars, for
+// instance) would otherwise fall through to the generic detector.
+var terraformExtensions = []string{".tf", ".tfvars"}
 
 // Detector implements port.Detector as a regex-based fallback.
 type Detector struct{}
@@ -42,34 +44,16 @@ func (d *Detector) Name() string { return string(Strategy) }
 func (d *Detector) Tier() port.Tier { return port.TierFallback }
 
 // Match implements port.Detector.
-// Returns true for any file not owned by a specialist detector.
+// Returns true for every file except Terraform ones. Files of the file-level
+// specialists need no exclusion here: as a fallback this detector is only
+// consulted after every specialist has declined the file.
 func (d *Detector) Match(filePath string) bool {
 	lower := strings.ToLower(path.Base(filePath))
 
-	// Dockerfile variants — owned by the dockerfile detector.
-	if lower == "dockerfile" ||
-		strings.HasPrefix(lower, "dockerfile.") ||
-		strings.HasSuffix(lower, ".dockerfile") {
-		return false
-	}
-
-	// Extension-based specialist files (.tf, .tfvars).
-	for _, ext := range specialistExtensions {
+	for _, ext := range terraformExtensions {
 		if strings.HasSuffix(lower, ext) {
 			return false
 		}
-	}
-
-	// Helm values files.
-	if lower == "values.yaml" || lower == "values.yml" {
-		return false
-	}
-
-	// GitHub Actions workflow and action files — owned by the githubactions detector.
-	lowerPath := strings.ToLower(filePath)
-	if strings.Contains(lowerPath, ".github/workflows/") ||
-		strings.Contains(lowerPath, ".github/actions/") {
-		return false
 	}
 
 	return true
