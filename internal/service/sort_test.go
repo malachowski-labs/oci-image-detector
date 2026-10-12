@@ -3,7 +3,7 @@ package service
 import (
 	"testing"
 
-	"github.com/malachowski-labs/oci-image-detector/internal/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
 )
 
 func TestSortFindings(t *testing.T) {

@@ -9,9 +9,9 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/malachowski-labs/oci-image-detector/internal/domain"
-	"github.com/malachowski-labs/oci-image-detector/internal/port"
 	"github.com/malachowski-labs/oci-image-detector/internal/service"
+	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/port"
 )
 
 // --- test doubles ---

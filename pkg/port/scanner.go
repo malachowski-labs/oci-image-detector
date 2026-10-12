@@ -3,7 +3,7 @@ package port
 import (
 	"context"
 
-	"github.com/malachowski-labs/oci-image-detector/internal/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
 )
 
 // ScanOptions controls the behaviour of a Scanner.Scan call.

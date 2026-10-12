@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/reporter"
-	"github.com/malachowski-labs/oci-image-detector/internal/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
 )
 
 func mustParsedRef(raw, registry, repo, tag string) domain.ImageRef {

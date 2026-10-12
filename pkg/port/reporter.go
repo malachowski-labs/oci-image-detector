@@ -1,7 +1,7 @@
 package port
 
 import (
-	"github.com/malachowski-labs/oci-image-detector/internal/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
 )
 
 // Reporter is a driven port implemented by output adapters (human-readable
