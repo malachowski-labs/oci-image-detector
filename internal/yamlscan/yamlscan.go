@@ -24,8 +24,9 @@ func HasValue(node *yaml.Node) bool {
 }
 
 // Scalar calls report for every fully-qualified image reference inside a
-// scalar node, as selected by the strict imageref.Candidates filter, with the
-// 1-based line the reference sits on. Nodes of any other kind hold no text and
+// scalar node, as selected by the strict imageref.Candidates filter and not
+// rejected by imageref.IsSourceFile, with the 1-based line the reference sits
+// on. Nodes of any other kind hold no text and
 // yield nothing.
 //
 // The inline ignore annotation is honoured as a YAML comment on the value and,
@@ -47,7 +48,9 @@ func Scalar(node *yaml.Node, report func(ref domain.ImageRef, line int)) {
 			at += i + 1
 		}
 		for _, raw := range imageref.Candidates(line) {
-			report(imageref.Parse(raw), at)
+			if ref := imageref.Parse(raw); !imageref.IsSourceFile(ref) {
+				report(ref, at)
+			}
 		}
 	}
 }

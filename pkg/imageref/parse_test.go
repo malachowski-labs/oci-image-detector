@@ -165,3 +165,22 @@ func TestCandidates(t *testing.T) {
 		})
 	}
 }
+
+func TestIsSourceFile(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want bool
+	}{
+		{"github.com/org/repo/cmd/main.go:47", true},
+		{"example.com/pkg/app/handler.py:12", true},
+		{"ghcr.io/org/app:v1", false},
+		{"gcr.io/proj/redis:7", false},          // integer tag, not a line number
+		{"ghcr.io/org/app.go/server:v1", false}, // extension on an inner segment
+		{"quay.io/org/app.v2:20", false},        // not a source-file extension
+	}
+	for _, tc := range cases {
+		if got := imageref.IsSourceFile(imageref.Parse(tc.raw)); got != tc.want {
+			t.Errorf("IsSourceFile(%q) = %v, want %v", tc.raw, got, tc.want)
+		}
+	}
+}

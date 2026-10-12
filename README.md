@@ -378,7 +378,7 @@ Detector names must be unique across the binary, including the built-in ones (`c
 
 Two helper packages are available to detectors:
 
-- [`pkg/imageref`](pkg/imageref/parse.go) — `Parse` resolves a reference into registry, repository and tag or digest; `Candidates` is the precision filter for scanning unstructured text. `ContainsTemplate` tells an unresolved placeholder (`${TAG}`, `{{ .Values.tag }}`) from a string that is simply not a reference.
+- [`pkg/imageref`](pkg/imageref/parse.go) — `Parse` resolves a reference into registry, repository and tag or digest; `Candidates` is the precision filter for scanning unstructured text, and `IsSourceFile` drops the `file.go:47` look-alikes it lets through. `ContainsTemplate` tells an unresolved placeholder (`${TAG}`, `{{ .Values.tag }}`) from a string that is simply not a reference.
 - [`pkg/suppress`](pkg/suppress/annotation.go) — `IsIgnoredLine` recognises the [inline annotation](#inline-annotation), so a custom detector can honour it the same way the built-in ones do.
 
 ## Supported platforms
