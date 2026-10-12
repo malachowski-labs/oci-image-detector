@@ -14,7 +14,8 @@ import "strings"
 // Usage examples:
 //
 //	# Dockerfile
-//	FROM nginx:latest  # oci-image-detector:ignore
+//	# oci-image-detector:ignore
+//	FROM nginx:latest
 //
 //	# Go / any text file
 //	// "localhost:5000/image:v1" -> "localhost:5000/image"  // oci-image-detector:ignore

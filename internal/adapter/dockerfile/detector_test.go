@@ -152,6 +152,62 @@ func TestDetector_Detect(t *testing.T) {
 			wantRaws:  []string{"alpine:3.19", "ghcr.io/org/app:v1"},
 			wantLines: []uint{1, 2},
 		},
+		{
+			// Issue #81: a comment of its own is the only form Docker accepts
+			// on every instruction.
+			name:      "annotation on the comment line above suppresses the instruction",
+			content:   "# oci-image-detector:ignore\nFROM ubuntu:24.04\nFROM alpine:3.19\n",
+			wantRaws:  []string{"alpine:3.19"},
+			wantLines: []uint{3},
+		},
+		{
+			name:      "annotation anywhere in the comment block above suppresses the instruction",
+			content:   "# placeholder base  oci-image-detector:ignore\n# hadolint ignore=DL3006\nFROM ubuntu:24.04\n",
+			wantRaws:  nil,
+			wantLines: nil,
+		},
+		{
+			name:      "annotation on a comment line inside a continuation suppresses the instruction",
+			content:   "FROM redis:7 \\\n  # oci-image-detector:ignore\n  AS r\nFROM alpine:3.19\n",
+			wantRaws:  []string{"alpine:3.19"},
+			wantLines: []uint{4},
+		},
+		{
+			name:      "annotation above suppresses every reference of the instruction",
+			content:   "FROM alpine:3.19\n# oci-image-detector:ignore\nRUN docker pull ghcr.io/org/app:v1 && \\\n  docker pull quay.io/org/sidecar:v2\n",
+			wantRaws:  []string{"alpine:3.19"},
+			wantLines: []uint{1},
+		},
+		{
+			name:      "annotation above an ARG suppresses its default",
+			content:   "FROM alpine:3.19\n# oci-image-detector:ignore\nARG TOOLS=ghcr.io/org/tools:v4\n",
+			wantRaws:  []string{"alpine:3.19"},
+			wantLines: []uint{1},
+		},
+		{
+			name:      "blank line detaches the annotation from the instruction",
+			content:   "# oci-image-detector:ignore\n\nFROM ubuntu:24.04\n",
+			wantRaws:  []string{"ubuntu:24.04"},
+			wantLines: []uint{3},
+		},
+		{
+			name:      "annotation applies to one instruction only",
+			content:   "# oci-image-detector:ignore\nFROM ubuntu:24.04\n# a plain comment\nFROM alpine:3.19\n",
+			wantRaws:  []string{"alpine:3.19"},
+			wantLines: []uint{4},
+		},
+		{
+			name:      "longer marker in a comment is not the annotation",
+			content:   "# oci-image-detector:ignored\nFROM ubuntu:24.04\n",
+			wantRaws:  []string{"ubuntu:24.04"},
+			wantLines: []uint{2},
+		},
+		{
+			name:      "trailing annotation still suppresses the instruction",
+			content:   "FROM alpine:3.19\nRUN docker pull ghcr.io/org/app:v1 # oci-image-detector:ignore\n",
+			wantRaws:  []string{"alpine:3.19"},
+			wantLines: []uint{1},
+		},
 	}
 
 	for _, tc := range tests {
