@@ -2,8 +2,10 @@ package registry_test
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"slices"
+	"sync/atomic"
 	"testing"
 
 	"github.com/malachowski-labs/oci-image-detector/internal/domain"
@@ -34,6 +36,10 @@ func (d *stubDirDetector) DetectDir(fs.FS) ([]domain.Finding, error) {
 }
 
 // --- helpers ---
+
+// defaultRegistryRuns counts executions of the tests that write to the
+// process-wide default registry.
+var defaultRegistryRuns atomic.Int64
 
 func specialist(name string) *stubDetector {
 	return &stubDetector{name: name, tier: port.TierSpecialist}
@@ -160,6 +166,47 @@ func TestRegisterDir_rejectsInvalidDetectors(t *testing.T) {
 			if got := len(r.DirDetectors()); got != 0 {
 				t.Errorf("rejected detector was registered: got %d dir detectors, want 0", got)
 			}
+		})
+	}
+}
+
+func TestMustRegister_addsToDefaultRegistry(t *testing.T) {
+	// The default registry is process-wide and outlives a single test run, so
+	// the names are made unique per run to keep the test repeatable (-count).
+	run := defaultRegistryRuns.Add(1)
+	fileName := fmt.Sprintf("default-file-%d", run)
+	dirName := fmt.Sprintf("default-dir-%d", run)
+
+	registry.MustRegister(specialist(fileName))
+	registry.MustRegisterDir(&stubDirDetector{name: dirName})
+
+	if got := names(registry.Default().Detectors()); !slices.Contains(got, fileName) {
+		t.Errorf("default registry detectors = %v, want them to contain %q", got, fileName)
+	}
+	if !slices.ContainsFunc(registry.Default().DirDetectors(), func(d port.DirectoryAwareDetector) bool {
+		return d.Name() == dirName
+	}) {
+		t.Errorf("default registry dir detectors do not contain %q", dirName)
+	}
+}
+
+func TestMustRegister_panicsOnInvalidDetector(t *testing.T) {
+	tests := []struct {
+		name     string
+		register func()
+	}{
+		{name: "file detector", register: func() { registry.MustRegister(specialist("")) }},
+		{name: "dir detector", register: func() { registry.MustRegisterDir(&stubDirDetector{}) }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Error("expected a panic, got none")
+				}
+			}()
+			tt.register()
 		})
 	}
 }

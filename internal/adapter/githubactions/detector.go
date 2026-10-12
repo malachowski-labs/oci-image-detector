@@ -10,6 +10,7 @@ import (
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/imageref"
 	"github.com/malachowski-labs/oci-image-detector/internal/domain"
 	"github.com/malachowski-labs/oci-image-detector/internal/port"
+	"github.com/malachowski-labs/oci-image-detector/internal/registry"
 )
 
 // Strategy is the stable identifier for this detection strategy.
@@ -20,6 +21,9 @@ type Detector struct{}
 
 // New returns a new GitHub Actions Detector.
 func New() *Detector { return &Detector{} }
+
+// init makes the detector available to every binary that links this package.
+func init() { registry.MustRegister(New()) }
 
 // Name implements port.Detector.
 func (d *Detector) Name() string { return string(Strategy) }

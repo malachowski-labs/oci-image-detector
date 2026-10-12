@@ -15,6 +15,7 @@ import (
 
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/reporter"
 	"github.com/malachowski-labs/oci-image-detector/internal/port"
+	"github.com/malachowski-labs/oci-image-detector/internal/registry"
 	"github.com/malachowski-labs/oci-image-detector/internal/service"
 )
 
@@ -109,11 +110,8 @@ func run(ctx context.Context, opts options) error {
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	detectors, err := builtinDetectors()
-	if err != nil {
-		return fmt.Errorf("register detectors: %w", err)
-	}
-
+	// Detectors register themselves; see detectors.go for the built-in set.
+	detectors := registry.Default()
 	scanner := service.NewScanService(detectors.Detectors(), detectors.DirDetectors(), log)
 
 	findings, err := scanner.Scan(ctx, opts.directory, port.ScanOptions{

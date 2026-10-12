@@ -1,9 +1,10 @@
 // Package registry collects the detectors available to a scan and hands them
 // to the ScanService in a deterministic, declared order.
 //
-// It depends only on internal/port — never on adapters. The composition root
-// decides which detectors exist; the registry decides in which order they are
-// consulted.
+// It depends only on internal/port — never on adapters. Detectors register
+// themselves with the default registry from their init functions, so linking a
+// detector package into the binary is all it takes to enable it; the registry
+// decides in which order detectors are consulted.
 package registry
 
 import (
@@ -39,6 +40,32 @@ type Registry struct {
 // New returns an empty Registry.
 func New() *Registry {
 	return &Registry{names: make(map[string]struct{})}
+}
+
+// defaultRegistry is the process-wide registry that detector packages register
+// into from init. It is only written during package initialisation, which the
+// Go runtime runs sequentially, and only read afterwards.
+var defaultRegistry = New()
+
+// Default returns the registry holding every self-registered detector.
+func Default() *Registry { return defaultRegistry }
+
+// MustRegister adds a file-level detector to the default registry.
+// It is meant to be called from a detector package's init function and panics
+// on the errors Register reports: a misconfigured detector is a programming
+// error that must stop the binary before any scan starts.
+func MustRegister(d port.Detector) {
+	if err := defaultRegistry.Register(d); err != nil {
+		panic(err)
+	}
+}
+
+// MustRegisterDir adds a directory-aware detector to the default registry.
+// Same contract as MustRegister.
+func MustRegisterDir(d port.DirectoryAwareDetector) {
+	if err := defaultRegistry.RegisterDir(d); err != nil {
+		panic(err)
+	}
 }
 
 // Register adds a file-level detector.
