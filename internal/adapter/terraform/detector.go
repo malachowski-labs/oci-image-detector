@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/malachowski-labs/oci-image-detector/internal/domain"
+	"github.com/malachowski-labs/oci-image-detector/internal/registry"
 )
 
 // Strategy is the stable identifier for findings resolved from Terraform source.
@@ -27,6 +28,9 @@ type Detector struct{}
 
 // New returns a new Terraform Detector.
 func New() *Detector { return &Detector{} }
+
+// init makes the detector available to every binary that links this package.
+func init() { registry.MustRegisterDir(New()) }
 
 // Name implements port.DirectoryAwareDetector.
 func (d *Detector) Name() string { return string(Strategy) }
