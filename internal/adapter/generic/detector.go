@@ -3,7 +3,6 @@
 package generic
 
 import (
-	"bufio"
 	"bytes"
 	"strings"
 
@@ -16,11 +15,6 @@ import (
 
 // Strategy is the stable identifier for this detection strategy.
 const Strategy domain.Strategy = "generic"
-
-// maxScanTokenSize is the maximum line length the scanner will handle.
-// The bufio default of 64 KiB is raised to 1 MiB to avoid silent truncation
-// on minified JSON, auto-generated YAML, or other wide-line files.
-const maxScanTokenSize = 1 << 20 // 1 MiB
 
 // Detector implements port.Detector as a regex-based fallback.
 type Detector struct{}
@@ -45,13 +39,11 @@ func (d *Detector) Match(string) bool { return true }
 // with go-containerregistry.
 func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, error) {
 	var findings []domain.Finding
-	scanner := bufio.NewScanner(bytes.NewReader(content))
-	scanner.Buffer(make([]byte, maxScanTokenSize), maxScanTokenSize)
 	var lineNum uint
 
-	for scanner.Scan() {
+	for raw := range bytes.Lines(content) {
 		lineNum++
-		line := scanner.Text()
+		line := strings.TrimSuffix(strings.TrimSuffix(string(raw), "\n"), "\r")
 
 		if suppress.IsIgnoredLine(line) {
 			continue
@@ -71,7 +63,7 @@ func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, er
 		}
 	}
 
-	return findings, scanner.Err()
+	return findings, nil
 }
 
 // sourceFileExtensions are file extensions that identify a source-code or
