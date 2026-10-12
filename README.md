@@ -300,6 +300,7 @@ import (
 	"regexp"
 
 	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/imageref"
 	"github.com/malachowski-labs/oci-image-detector/pkg/port"
 	"github.com/malachowski-labs/oci-image-detector/pkg/registry"
 )
@@ -318,7 +319,7 @@ func (d *Detector) Detect(p string, content []byte) ([]domain.Finding, error) {
 	var findings []domain.Finding
 	for _, m := range imageRe.FindAllSubmatch(content, -1) {
 		findings = append(findings, domain.Finding{
-			Ref:      domain.NewImageRef(string(m[1])),
+			Ref:      imageref.Parse(string(m[1])),
 			FilePath: p,
 			Strategy: "compose",
 		})
@@ -341,7 +342,12 @@ import (
 func main() { cmd.Execute("custom") }
 ```
 
-Detector names must be unique across the binary, including the built-in ones (`dockerfile`, `generic`, `githubactions`, `helm`, `terraform`); a duplicate name stops the binary at start-up. `domain.NewImageRef` records the reference as written; use `domain.NewParsedImageRef` when your detector can supply the registry, repository and tag or digest.
+Detector names must be unique across the binary, including the built-in ones (`dockerfile`, `generic`, `githubactions`, `helm`, `terraform`); a duplicate name stops the binary at start-up.
+
+Two helper packages are available to detectors:
+
+- [`pkg/imageref`](pkg/imageref/parse.go) — `Parse` resolves a reference into registry, repository and tag or digest; `Candidates` and `LooksLikeImage` are the precision filters for scanning unstructured text.
+- [`pkg/suppress`](pkg/suppress/annotation.go) — `IsIgnoredLine` recognises the [inline annotation](#inline-annotation), so a custom detector can honour it the same way the built-in ones do.
 
 ## Supported platforms
 
