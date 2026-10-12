@@ -286,6 +286,63 @@ oci-image-detector \
 
 ---
 
+## Custom detectors
+
+Detectors are plugins compiled into the binary. To add one for a format the built-in set does not cover, build your own binary: write a detector package, register it from `init`, and reuse this project's command.
+
+A file-level detector implements [`port.Detector`](pkg/port/detector.go) and declares a tier — `port.TierSpecialist` for a detector that claims one file format, `port.TierFallback` for one that takes whatever no specialist claimed. Specialists are always consulted before fallbacks, and the first match wins. A detector that needs a whole directory at once implements `port.DirectoryAwareDetector` and registers with `registry.MustRegisterDir`.
+
+```go
+package compose
+
+import (
+	"path"
+	"regexp"
+
+	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/port"
+	"github.com/malachowski-labs/oci-image-detector/pkg/registry"
+)
+
+var imageRe = regexp.MustCompile(`(?m)^\s*image:\s*(\S+)`)
+
+type Detector struct{}
+
+func init() { registry.MustRegister(&Detector{}) }
+
+func (d *Detector) Name() string        { return "compose" }
+func (d *Detector) Tier() port.Tier     { return port.TierSpecialist }
+func (d *Detector) Match(p string) bool { return path.Base(p) == "compose.yaml" }
+
+func (d *Detector) Detect(p string, content []byte) ([]domain.Finding, error) {
+	var findings []domain.Finding
+	for _, m := range imageRe.FindAllSubmatch(content, -1) {
+		findings = append(findings, domain.Finding{
+			Ref:      domain.NewImageRef(string(m[1])),
+			FilePath: p,
+			Strategy: "compose",
+		})
+	}
+	return findings, nil
+}
+```
+
+Link it in by importing the package for its side effect:
+
+```go
+package main
+
+import (
+	"github.com/malachowski-labs/oci-image-detector/cmd"
+
+	_ "example.com/custom/compose"
+)
+
+func main() { cmd.Execute("custom") }
+```
+
+Detector names must be unique across the binary, including the built-in ones (`dockerfile`, `generic`, `githubactions`, `helm`, `terraform`); a duplicate name stops the binary at start-up. `domain.NewImageRef` records the reference as written; use `domain.NewParsedImageRef` when your detector can supply the registry, repository and tag or digest.
+
 ## Supported platforms
 
 | Usage | Platforms |

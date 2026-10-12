@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/malachowski-labs/oci-image-detector/internal/port"
-	"github.com/malachowski-labs/oci-image-detector/internal/registry"
+	"github.com/malachowski-labs/oci-image-detector/pkg/port"
+	"github.com/malachowski-labs/oci-image-detector/pkg/registry"
 )
 
 func TestBuiltinDetectors_fallbackIsConsultedLast(t *testing.T) {

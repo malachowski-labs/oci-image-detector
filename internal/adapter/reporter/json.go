@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/malachowski-labs/oci-image-detector/internal/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
 )
 
 // jsonFinding is the JSON wire representation of a single finding.

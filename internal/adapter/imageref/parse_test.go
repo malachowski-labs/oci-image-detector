@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/imageref"
-	"github.com/malachowski-labs/oci-image-detector/internal/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
 )
 
 func TestParse(t *testing.T) {

@@ -14,9 +14,9 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/reporter"
-	"github.com/malachowski-labs/oci-image-detector/internal/port"
-	"github.com/malachowski-labs/oci-image-detector/internal/registry"
 	"github.com/malachowski-labs/oci-image-detector/internal/service"
+	"github.com/malachowski-labs/oci-image-detector/pkg/port"
+	"github.com/malachowski-labs/oci-image-detector/pkg/registry"
 )
 
 // builtinExcludes are patterns always applied before user-supplied --exclude
