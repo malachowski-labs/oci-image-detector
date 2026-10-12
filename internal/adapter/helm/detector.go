@@ -8,10 +8,11 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/malachowski-labs/oci-image-detector/internal/adapter/imageref"
 	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/imageref"
 	"github.com/malachowski-labs/oci-image-detector/pkg/port"
 	"github.com/malachowski-labs/oci-image-detector/pkg/registry"
+	"github.com/malachowski-labs/oci-image-detector/pkg/suppress"
 )
 
 // Strategy is the stable identifier for this detection strategy.
@@ -148,7 +149,7 @@ func isImageParent(key string) bool {
 func mapValueIgnored(node *yaml.Node, key string) bool {
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		if node.Content[i].Value == key {
-			return strings.Contains(node.Content[i+1].LineComment, imageref.IgnoreAnnotation)
+			return strings.Contains(node.Content[i+1].LineComment, suppress.Annotation)
 		}
 	}
 	return false

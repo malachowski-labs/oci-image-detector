@@ -8,8 +8,8 @@ import (
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
 
-	"github.com/malachowski-labs/oci-image-detector/internal/adapter/imageref"
 	"github.com/malachowski-labs/oci-image-detector/pkg/domain"
+	"github.com/malachowski-labs/oci-image-detector/pkg/imageref"
 )
 
 // maxFindingsPerAttr caps the findings a single attribute may produce.
@@ -241,7 +241,7 @@ func (s *scanner) evalString(expr hclsyntax.Expression) (string, bool) {
 
 // report emits a finding for each image reference in str, attributed to the
 // given source line, unless that line carries the inline suppress annotation
-// (imageref.IsIgnoredLine).
+// (suppress.IsIgnoredLine).
 func (s *scanner) report(str string, line int) {
 	if isIgnoredLine(s.file.lines, line) {
 		return
