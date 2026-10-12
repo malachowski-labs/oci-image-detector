@@ -13,13 +13,9 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
-	"github.com/malachowski-labs/oci-image-detector/internal/adapter/dockerfile"
-	"github.com/malachowski-labs/oci-image-detector/internal/adapter/generic"
-	"github.com/malachowski-labs/oci-image-detector/internal/adapter/githubactions"
-	"github.com/malachowski-labs/oci-image-detector/internal/adapter/helm"
 	"github.com/malachowski-labs/oci-image-detector/internal/adapter/reporter"
-	"github.com/malachowski-labs/oci-image-detector/internal/adapter/terraform"
 	"github.com/malachowski-labs/oci-image-detector/internal/port"
+	"github.com/malachowski-labs/oci-image-detector/internal/registry"
 	"github.com/malachowski-labs/oci-image-detector/internal/service"
 )
 
@@ -114,19 +110,9 @@ func run(ctx context.Context, opts options) error {
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	scanner := service.NewScanService(
-		[]port.Detector{
-			// Order matters: first match wins. Specialist detectors before generic.
-			dockerfile.New(),
-			helm.New(),
-			githubactions.New(),
-			generic.New(),
-		},
-		[]port.DirectoryAwareDetector{
-			terraform.New(),
-		},
-		log,
-	)
+	// Detectors register themselves; see detectors.go for the built-in set.
+	detectors := registry.Default()
+	scanner := service.NewScanService(detectors.Detectors(), detectors.DirDetectors(), log)
 
 	findings, err := scanner.Scan(ctx, opts.directory, port.ScanOptions{
 		Exclude:       append(builtinExcludes, opts.exclude...),

@@ -6,10 +6,43 @@
 package port
 
 import (
+	"fmt"
 	"io/fs"
 
 	"github.com/malachowski-labs/oci-image-detector/internal/domain"
 )
+
+// Tier is the priority class a Detector declares for itself. It replaces
+// positional ordering: every specialist is consulted before any fallback, so a
+// detector's precedence is a property of the detector rather than of where it
+// happens to be registered.
+type Tier int
+
+const (
+	// TierSpecialist marks a detector that understands one file format and
+	// claims only the files of that format.
+	TierSpecialist Tier = iota
+
+	// TierFallback marks a detector that accepts files no specialist claimed.
+	TierFallback
+)
+
+// Valid reports whether t is one of the declared tiers.
+func (t Tier) Valid() bool {
+	return t == TierSpecialist || t == TierFallback
+}
+
+// String returns the lower-case name of the tier, for logs and error messages.
+func (t Tier) String() string {
+	switch t {
+	case TierSpecialist:
+		return "specialist"
+	case TierFallback:
+		return "fallback"
+	default:
+		return fmt.Sprintf("Tier(%d)", int(t))
+	}
+}
 
 // Detector is a driven port implemented by each file-type-specific detection
 // strategy. The ScanService iterates registered detectors, calls Match to find
@@ -19,6 +52,12 @@ type Detector interface {
 	// Must be a non-empty string that is stable across versions; it is used
 	// as Finding.Strategy for every finding this detector produces.
 	Name() string
+
+	// Tier returns the priority class of this detector. The registry orders
+	// detectors by tier, so a fallback is only consulted for files no
+	// specialist claimed. Detectors that share a tier must claim disjoint
+	// sets of files: order within a tier is deterministic, not a precedence.
+	Tier() Tier
 
 	// Match reports whether this detector should handle the given file path.
 	// Path is slash-separated and relative to the scan root.
@@ -39,6 +78,9 @@ type Detector interface {
 // It is intentionally separate from Detector — a dir-aware strategy does not
 // have a meaningful Match(file) method, and embedding Detector would require
 // implementing a method that the ScanService must never call.
+//
+// DirectoryAwareDetectors declare no Tier: they are always consulted before
+// file-level Detectors, and there is no fallback notion for directories.
 //
 // The ScanService accepts a separate slice of DirectoryAwareDetectors. For
 // each directory in the scan tree it calls MatchDir; if true it calls

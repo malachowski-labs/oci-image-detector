@@ -19,6 +19,9 @@ func TestDetector_Match(t *testing.T) {
 		{"values.json", false},
 		{"other.yaml", false},
 		{"Dockerfile", false},
+		{".github/workflows/values.yaml", false},
+		{".github/actions/build/values.yml", false},
+		{"sub/.GitHub/Workflows/Values.yaml", false},
 	}
 	for _, tc := range cases {
 		if got := det.Match(tc.path); got != tc.want {

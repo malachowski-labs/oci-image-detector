@@ -29,6 +29,8 @@ type ScanService struct {
 // NewScanService constructs a ScanService.
 // detectors handles individual files; dirDetectors handles whole directories
 // (e.g. Terraform, which needs cross-file variable resolution).
+// Both slices are consulted in the order given and the first match wins;
+// internal/registry produces that order from each detector's declared tier.
 func NewScanService(
 	detectors []port.Detector,
 	dirDetectors []port.DirectoryAwareDetector,
