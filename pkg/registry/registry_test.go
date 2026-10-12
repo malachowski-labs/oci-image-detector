@@ -172,6 +172,77 @@ func TestRegisterDir_rejectsInvalidDetectors(t *testing.T) {
 	}
 }
 
+func TestNames_sortedAcrossBothKinds(t *testing.T) {
+	r := registry.New()
+	if err := r.Register(specialist("b")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := r.RegisterDir(&stubDirDetector{name: "a"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got, want := r.Names(), []string{"a", "b"}; !slices.Equal(got, want) {
+		t.Errorf("Names() = %v, want %v", got, want)
+	}
+}
+
+func TestWithout_removesNamedDetectors(t *testing.T) {
+	r := registry.New()
+	for _, d := range []port.Detector{specialist("keep"), specialist("drop"), fallback("fallback")} {
+		if err := r.Register(d); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	if err := r.RegisterDir(&stubDirDetector{name: "drop-dir"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got, err := r.Without("drop", "drop-dir")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if want := []string{"keep", "fallback"}; !slices.Equal(names(got.Detectors()), want) {
+		t.Errorf("Detectors() = %v, want %v", names(got.Detectors()), want)
+	}
+	if n := len(got.DirDetectors()); n != 0 {
+		t.Errorf("expected no dir detectors, got %d", n)
+	}
+	if want := []string{"fallback", "keep"}; !slices.Equal(got.Names(), want) {
+		t.Errorf("Names() = %v, want %v", got.Names(), want)
+	}
+	// The receiver must be left untouched.
+	if n := len(r.Names()); n != 4 {
+		t.Errorf("Without mutated the receiver: %d names left, want 4", n)
+	}
+}
+
+func TestWithout_noNamesKeepsEverything(t *testing.T) {
+	r := registry.New()
+	if err := r.Register(specialist("a")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got, err := r.Without()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := []string{"a"}; !slices.Equal(got.Names(), want) {
+		t.Errorf("Names() = %v, want %v", got.Names(), want)
+	}
+}
+
+func TestWithout_unknownName(t *testing.T) {
+	r := registry.New()
+	if err := r.Register(specialist("a")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, err := r.Without("a", "typo"); !errors.Is(err, registry.ErrUnknownDetector) {
+		t.Errorf("Without() error = %v, want %v", err, registry.ErrUnknownDetector)
+	}
+}
+
 func TestMustRegister_addsToDefaultRegistry(t *testing.T) {
 	// The default registry is process-wide and outlives a single test run, so
 	// the names are made unique per run to keep the test repeatable (-count).
