@@ -116,6 +116,42 @@ func TestDetector_Detect(t *testing.T) {
 			wantRaws:  []string{"golang:1.25", "alpine:3.19"},
 			wantLines: []uint{1, 2},
 		},
+		{
+			name:      "fully-qualified reference in another instruction",
+			content:   "FROM alpine:3.19\nRUN docker pull ghcr.io/org/app:v1 && docker pull redis:7\nENV SIDECAR=quay.io/org/sidecar:v2\n",
+			wantRaws:  []string{"alpine:3.19", "ghcr.io/org/app:v1", "quay.io/org/sidecar:v2"},
+			wantLines: []uint{1, 2, 3},
+		},
+		{
+			name:      "source file with a line number is not a reference",
+			content:   "FROM alpine:3.19\nRUN echo github.com/org/repo/cmd/main.go:47\n",
+			wantRaws:  []string{"alpine:3.19"},
+			wantLines: []uint{1},
+		},
+		{
+			name:      "reference on a continued line is attributed to its instruction",
+			content:   "FROM alpine:3.19\nRUN --mount=type=bind,from=ghcr.io/org/tools:v4,target=/tools \\\n  /tools/run\n",
+			wantRaws:  []string{"alpine:3.19", "ghcr.io/org/tools:v4"},
+			wantLines: []uint{1, 2},
+		},
+		{
+			name:      "ARG default consumed by FROM is reported once",
+			content:   "ARG BASE=ghcr.io/org/base:v1\nFROM ${BASE}\n",
+			wantRaws:  []string{"ghcr.io/org/base:v1"},
+			wantLines: []uint{2},
+		},
+		{
+			name:      "ARG default no FROM or COPY consumes",
+			content:   "FROM alpine:3.19\nARG TOOLS=ghcr.io/org/tools:v4\nARG SHORT=redis:7\nRUN docker pull $TOOLS\n",
+			wantRaws:  []string{"alpine:3.19", "ghcr.io/org/tools:v4"},
+			wantLines: []uint{1, 2},
+		},
+		{
+			name:      "fully-qualified COPY --from is reported once",
+			content:   "FROM alpine:3.19\nCOPY --from=ghcr.io/org/app:v1 /a /b\n",
+			wantRaws:  []string{"alpine:3.19", "ghcr.io/org/app:v1"},
+			wantLines: []uint{1, 2},
+		},
 	}
 
 	for _, tc := range tests {

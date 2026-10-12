@@ -64,9 +64,16 @@ type instruction struct {
 //   - stage aliases ("FROM x AS build") — references to a known stage name, by
 //     FROM or by COPY --from, are not images and are skipped;
 //   - "scratch", which is the empty base image and never a real reference.
+//
+// The text of every other instruction (RUN, ENV, LABEL, …) is scanned with the
+// strict imageref.Candidates filter, so fully-qualified references in it are
+// still found. An ARG default is reported where a FROM or COPY --from uses
+// it; one that neither of them uses is scanned the same way.
 func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, error) {
 	args := map[string]string{} // build-arg defaults, by name
+	used := map[string]bool{}   // build args expanded into a FROM or COPY --from
 	stages := map[string]bool{} // declared stage names, lower-cased
+	var argLines []instruction  // ARG instructions, in file order
 	var findings []domain.Finding
 
 	for _, in := range logicalInstructions(content) {
@@ -81,13 +88,14 @@ func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, er
 		switch strings.ToUpper(fields[0]) {
 		case "ARG":
 			collectArgs(fields[1:], args)
+			argLines = append(argLines, in)
 
 		case "FROM":
 			raw, alias, ok := parseFrom(fields[1:])
 			if !ok {
 				continue
 			}
-			raw = expandArgs(raw, args)
+			raw = expandArgs(raw, args, used)
 			if alias != "" {
 				stages[strings.ToLower(alias)] = true
 			}
@@ -98,15 +106,47 @@ func (d *Detector) Detect(filePath string, content []byte) ([]domain.Finding, er
 			findings = append(findings, newFinding(raw, in.line, filePath))
 
 		case "COPY":
-			raw, ok := copyFromImage(fields[1:], args, stages)
+			raw, ok := copyFromImage(fields[1:], args, used, stages)
 			if !ok {
 				continue
 			}
 			findings = append(findings, newFinding(raw, in.line, filePath))
+
+		default:
+			findings = append(findings, textFindings(in.text, in.line, filePath)...)
 		}
 	}
 
-	return findings, nil
+	return append(findings, unusedDefaults(argLines, used, filePath)...), nil
+}
+
+// textFindings reports the fully-qualified references in text that no
+// instruction marks as an image, as selected by the strict
+// imageref.Candidates filter and not rejected by imageref.IsSourceFile.
+func textFindings(text string, line uint, filePath string) []domain.Finding {
+	var findings []domain.Finding
+	for _, raw := range imageref.Candidates(text) {
+		if f := newFinding(raw, line, filePath); !imageref.IsSourceFile(f.Ref) {
+			findings = append(findings, f)
+		}
+	}
+	return findings
+}
+
+// unusedDefaults reports the fully-qualified references among the ARG
+// defaults that no FROM or COPY --from expanded. A default that one of them
+// uses is reported there instead, so it is not reported twice.
+func unusedDefaults(argLines []instruction, used map[string]bool, filePath string) []domain.Finding {
+	var findings []domain.Finding
+	for _, in := range argLines {
+		for _, f := range strings.Fields(in.text)[1:] {
+			name, val, ok := strings.Cut(f, "=")
+			if ok && !used[name] {
+				findings = append(findings, textFindings(val, in.line, filePath)...)
+			}
+		}
+	}
+	return findings
 }
 
 // newFinding builds a Finding for a raw image reference at the given location.
@@ -192,7 +232,7 @@ func parseFrom(fields []string) (image, alias string, ok bool) {
 // copyFromImage returns the external image referenced by a COPY --from flag, if
 // any. Stage references (by name or numeric index) and unresolved templates are
 // not images and yield ok=false.
-func copyFromImage(fields []string, args map[string]string, stages map[string]bool) (string, bool) {
+func copyFromImage(fields []string, args map[string]string, used, stages map[string]bool) (string, bool) {
 	from := ""
 	found := false
 	for _, f := range fields {
@@ -206,7 +246,7 @@ func copyFromImage(fields []string, args map[string]string, stages map[string]bo
 		return "", false
 	}
 
-	from = expandArgs(from, args)
+	from = expandArgs(from, args, used)
 	if from == "" || strings.Contains(from, "$") {
 		return "", false // unresolved template — too ambiguous to report
 	}
@@ -231,9 +271,9 @@ func collectArgs(fields []string, args map[string]string) {
 	}
 }
 
-// expandArgs substitutes ${NAME}/$NAME references with recorded ARG values.
-// Unknown references are left intact.
-func expandArgs(s string, args map[string]string) string {
+// expandArgs substitutes ${NAME}/$NAME references with recorded ARG values and
+// records the substituted names in used. Unknown references are left intact.
+func expandArgs(s string, args map[string]string, used map[string]bool) string {
 	return argRefRe.ReplaceAllStringFunc(s, func(match string) string {
 		m := argRefRe.FindStringSubmatch(match)
 		name := m[1] // ${NAME} form
@@ -241,6 +281,7 @@ func expandArgs(s string, args map[string]string) string {
 			name = m[2] // $NAME form
 		}
 		if val, ok := args[name]; ok {
+			used[name] = true
 			return val
 		}
 		return match
