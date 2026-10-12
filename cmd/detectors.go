@@ -5,6 +5,7 @@ package cmd
 // ship it in the binary; the order of the imports is irrelevant because each
 // detector declares its own tier.
 import (
+	_ "github.com/malachowski-labs/oci-image-detector/internal/adapter/compose"
 	_ "github.com/malachowski-labs/oci-image-detector/internal/adapter/dockerfile"
 	_ "github.com/malachowski-labs/oci-image-detector/internal/adapter/generic"
 	_ "github.com/malachowski-labs/oci-image-detector/internal/adapter/githubactions"

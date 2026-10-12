@@ -6,6 +6,7 @@ A production-ready CLI tool and GitHub Action that **recursively scans a directo
 |---|---|
 | `Dockerfile` / `Containerfile` | `FROM` instructions (incl. `--platform`, `AS` aliases, `scratch`) |
 | Helm `values.yaml` / `values-*.yaml` | `registry` + `repository` + `tag` fields |
+| Docker Compose `compose.yaml` / `docker-compose.yaml` (incl. `.yml` and `compose.<suffix>.yaml` overrides) | `services.<name>.image`, incl. images shared through YAML anchors and merge keys |
 | Terraform `*.tf` | `image` / `container` / `source` variable defaults, locals, and resource arguments |
 | GitHub Actions `*.yml` / `*.yaml` under `.github/workflows/` and `.github/actions/` | `uses: docker://image:tag` steps, `container.image`, `services.<name>.image` |
 | Any text file | Bare `<registry>/<image>:<tag>`, `<image>:<tag>`, and `@sha256:` references |
@@ -235,6 +236,7 @@ Add `oci-image-detector:ignore` in a comment next to the image reference. Where 
 | Terraform | On the first line of the attribute, even when the literal sits on a later line of a multi-line expression |
 | Helm values | YAML comment on the `repository:` line |
 | GitHub Actions | YAML comment on the `uses:` / `image:` / `container:` value itself |
+| Docker Compose | YAML comment on the `image:` value itself |
 | Dockerfile | Not supported — use [`--exclude-images`](#--exclude-images--exclude-images-input) |
 
 ```go
@@ -290,7 +292,7 @@ oci-image-detector \
 
 ## Disabling detectors
 
-Each detector can be turned off by name: `dockerfile`, `generic`, `githubactions`, `helm`, `terraform`. An unknown name is an error, so a typo cannot leave a detector on by accident.
+Each detector can be turned off by name: `compose`, `dockerfile`, `generic`, `githubactions`, `helm`, `terraform`. An unknown name is an error, so a typo cannot leave a detector on by accident.
 
 The flag and the action input are available in releases after `v1.4.0`.
 
@@ -321,7 +323,7 @@ Detectors are plugins compiled into the binary. To add one for a format the buil
 A file-level detector implements [`port.Detector`](pkg/port/detector.go) and declares a tier — `port.TierSpecialist` for a detector that claims one file format, `port.TierFallback` for one that takes whatever no specialist claimed. Specialists are always consulted before fallbacks, and the first match wins. A detector that needs a whole directory at once implements `port.DirectoryAwareDetector` and registers with `registry.MustRegisterDir`.
 
 ```go
-package compose
+package nomad
 
 import (
 	"path"
@@ -333,15 +335,15 @@ import (
 	"github.com/malachowski-labs/oci-image-detector/pkg/registry"
 )
 
-var imageRe = regexp.MustCompile(`(?m)^\s*image:\s*(\S+)`)
+var imageRe = regexp.MustCompile(`(?m)^\s*image\s*=\s*"([^"]+)"`)
 
 type Detector struct{}
 
 func init() { registry.MustRegister(&Detector{}) }
 
-func (d *Detector) Name() string        { return "compose" }
+func (d *Detector) Name() string        { return "nomad" }
 func (d *Detector) Tier() port.Tier     { return port.TierSpecialist }
-func (d *Detector) Match(p string) bool { return path.Base(p) == "compose.yaml" }
+func (d *Detector) Match(p string) bool { return path.Ext(p) == ".nomad" }
 
 func (d *Detector) Detect(p string, content []byte) ([]domain.Finding, error) {
 	var findings []domain.Finding
@@ -349,7 +351,7 @@ func (d *Detector) Detect(p string, content []byte) ([]domain.Finding, error) {
 		findings = append(findings, domain.Finding{
 			Ref:      imageref.Parse(string(m[1])),
 			FilePath: p,
-			Strategy: "compose",
+			Strategy: "nomad",
 		})
 	}
 	return findings, nil
@@ -364,13 +366,13 @@ package main
 import (
 	"github.com/malachowski-labs/oci-image-detector/cmd"
 
-	_ "example.com/custom/compose"
+	_ "example.com/custom/nomad"
 )
 
 func main() { cmd.Execute("custom") }
 ```
 
-Detector names must be unique across the binary, including the built-in ones (`dockerfile`, `generic`, `githubactions`, `helm`, `terraform`); a duplicate name stops the binary at start-up.
+Detector names must be unique across the binary, including the built-in ones (`compose`, `dockerfile`, `generic`, `githubactions`, `helm`, `terraform`); a duplicate name stops the binary at start-up.
 
 Two helper packages are available to detectors:
 
