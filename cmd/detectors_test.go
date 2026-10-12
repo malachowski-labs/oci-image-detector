@@ -45,7 +45,7 @@ func TestBuiltinDetectors_exactSet(t *testing.T) {
 	for _, d := range registry.Default().Detectors() {
 		files = append(files, d.Name())
 	}
-	if want := []string{"dockerfile", "githubactions", "helm", "generic"}; !slices.Equal(files, want) {
+	if want := []string{"compose", "dockerfile", "githubactions", "helm", "generic"}; !slices.Equal(files, want) {
 		t.Errorf("file-level detectors = %v, want %v", files, want)
 	}
 
@@ -77,6 +77,9 @@ func TestBuiltinDetectors_specialistsDoNotOverlap(t *testing.T) {
 		{path: ".github/workflows/values.yaml", want: "githubactions"},
 		{path: ".github/actions/build/values.yml", want: "githubactions"},
 		{path: ".github/workflows/Dockerfile", want: "dockerfile"},
+		{path: ".github/workflows/compose.yaml", want: "githubactions"},
+		{path: "compose.yaml", want: "compose"},
+		{path: "deploy/docker-compose.override.yml", want: "compose"},
 		{path: "deploy/app.yaml", want: ""},
 		{path: "README.md", want: ""},
 	}
