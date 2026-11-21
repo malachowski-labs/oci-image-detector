@@ -2,7 +2,7 @@
 
 # ── Stage 1: build ──────────────────────────────────────────────────────────
 # Pin the builder by digest for reproducible, supply-chain-verifiable builds.
-FROM golang:1.27-alpine@sha256:bff16a94c0b4b6d9642581e2a3aa81beb3edb940b2f5a3aac1d22c6a68cb7747 AS builder
+FROM golang:1.27-alpine@sha256:ea30e25680a5470bac02b08bb0e0a735fb75bd0ab7d431b9b95ee0abef362586 AS builder
 
 # ca-certificates is copied into the final image so the binary can validate
 # HTTPS connections (e.g. future registry query features).
